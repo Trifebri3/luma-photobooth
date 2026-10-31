@@ -4,7 +4,7 @@ import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
 import {
     LayoutGrid, Plus, Save, ArrowLeft, Trash2, Sliders, Image, Check, AlertCircle,
-    UploadCloud, Sparkles, Eye, EyeOff
+    UploadCloud, Sparkles, Eye, EyeOff, Download
 } from 'lucide-vue-next';
 import axios from 'axios';
 
@@ -68,6 +68,146 @@ const previewContainerHeight = computed(() => {
 // Slot coordination save
 const isSavingSlots = ref(false);
 const saveSuccessMessage = ref('');
+
+// Download Template Acuan Desain (Canva / Photoshop / Figma)
+function downloadDesignGuide(template) {
+    if (!template) return;
+    const canvasW = template.canvas_width || 600;
+    const canvasH = template.canvas_height || 1800;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = canvasW;
+    canvas.height = canvasH;
+    const ctx = canvas.getContext('2d');
+
+    // 1. Background White
+    ctx.fillStyle = '#FFFFFF';
+    ctx.fillRect(0, 0, canvasW, canvasH);
+
+    // 2. Outer Border
+    ctx.lineWidth = 6;
+    ctx.strokeStyle = '#0D9488';
+    ctx.strokeRect(4, 4, canvasW - 8, canvasH - 8);
+
+    // 3. Top Header Guidelines
+    ctx.fillStyle = '#0F172A';
+    ctx.font = 'bold 30px sans-serif';
+    ctx.fillText(`ACUAN DESAIN: ${template.name.toUpperCase()}`, 30, 55);
+
+    ctx.fillStyle = '#0D9488';
+    ctx.font = 'bold 18px sans-serif';
+    ctx.fillText(`Ukuran Kanvas: ${canvasW} x ${canvasH} px • Format Ekspor: PNG 24-bit Transparan`, 30, 90);
+
+    ctx.fillStyle = '#64748B';
+    ctx.font = '14px sans-serif';
+    ctx.fillText('PETUNJUK: Masukkan elemen/desain di sekeliling kotak. Buat kotak foto TRANSPARAN saat diekspor.', 30, 115);
+
+    // 4. Slots
+    const slots = template.slots || activeSlots.value || [];
+    slots.forEach(slot => {
+        // Soft translucent fill for slot area
+        ctx.fillStyle = 'rgba(13, 148, 136, 0.08)';
+        ctx.fillRect(slot.x_position, slot.y_position, slot.width, slot.height);
+
+        // Dashed border for slot
+        ctx.lineWidth = 4;
+        ctx.strokeStyle = '#0D9488';
+        ctx.setLineDash([12, 8]);
+        ctx.strokeRect(slot.x_position, slot.y_position, slot.width, slot.height);
+        ctx.setLineDash([]);
+
+        // Diagonal guides
+        ctx.strokeStyle = 'rgba(13, 148, 136, 0.2)';
+        ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(slot.x_position, slot.y_position);
+        ctx.lineTo(slot.x_position + slot.width, slot.y_position + slot.height);
+        ctx.moveTo(slot.x_position, slot.y_position + slot.height);
+        ctx.lineTo(slot.x_position + slot.width, slot.y_position);
+        ctx.stroke();
+
+        // Slot Labels
+        const cx = slot.x_position + (slot.width / 2);
+        const cy = slot.y_position + (slot.height / 2);
+
+        ctx.fillStyle = '#0D9488';
+        ctx.font = 'bold 24px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.fillText(`AREA FOTO SLOT #${slot.slot_number}`, cx, cy - 20);
+
+        ctx.fillStyle = '#0F172A';
+        ctx.font = 'bold 20px monospace';
+        ctx.fillText(`${slot.width} x ${slot.height} px (${slot.aspect_ratio || '4:3'})`, cx, cy + 12);
+
+        ctx.fillStyle = '#E11D48'; // Rose 600
+        ctx.font = 'bold 15px sans-serif';
+        ctx.fillText('[ BUAT TRANSPARAN / BOLONG ]', cx, cy + 42);
+        ctx.textAlign = 'start';
+    });
+
+    // 5. Footer Branding
+    ctx.fillStyle = '#94A3B8';
+    ctx.font = 'bold 16px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('Luma Photobooth • by YOTA INOVASI NUSANTARA', canvasW / 2, canvasH - 35);
+
+    // 6. Download Trigger
+    const safeTitle = (template.name || 'template').replace(/[^a-zA-Z0-9]/g, '-').toLowerCase();
+    const link = document.createElement('a');
+    link.download = `Acuan-Desain-${safeTitle}-${canvasW}x${canvasH}.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+}
+
+function downloadPresetGuide(preset) {
+    let slots = [];
+    const count = preset.slots;
+    const w = preset.width;
+    const h = preset.height;
+
+    if (preset.id === 'grid_4') {
+        const slotW = Math.floor((w - 180) / 2);
+        const slotH = Math.floor((h - 260) / 2);
+        slots = [
+            { slot_number: 1, x_position: 60, y_position: 80, width: slotW, height: slotH, aspect_ratio: '3:4' },
+            { slot_number: 2, x_position: 120 + slotW, y_position: 80, width: slotW, height: slotH, aspect_ratio: '3:4' },
+            { slot_number: 3, x_position: 60, y_position: 140 + slotH, width: slotW, height: slotH, aspect_ratio: '3:4' },
+            { slot_number: 4, x_position: 120 + slotW, y_position: 140 + slotH, width: slotW, height: slotH, aspect_ratio: '3:4' },
+        ];
+    } else if (preset.id === 'polaroid_1') {
+        const side = Math.min(w - 160, h - 350);
+        slots = [
+            { slot_number: 1, x_position: Math.floor((w - side) / 2), y_position: 100, width: side, height: side, aspect_ratio: '1:1' }
+        ];
+    } else if (preset.id === 'duo_2') {
+        const slotH = Math.floor((h - 240) / 2);
+        const slotW = w - 140;
+        slots = [
+            { slot_number: 1, x_position: 70, y_position: 80, width: slotW, height: slotH, aspect_ratio: '16:9' },
+            { slot_number: 2, x_position: 70, y_position: 80 + slotH + 50, width: slotW, height: slotH, aspect_ratio: '16:9' },
+        ];
+    } else {
+        const slotH = Math.floor((h - 120 - ((count - 1) * 30)) / count);
+        const slotW = w - 80;
+        for (let i = 1; i <= count; i++) {
+            slots.push({
+                slot_number: i,
+                x_position: 40,
+                y_position: 60 + ((i - 1) * (slotH + 30)),
+                width: slotW,
+                height: slotH,
+                aspect_ratio: '4:3',
+            });
+        }
+    }
+
+    downloadDesignGuide({
+        name: preset.name,
+        canvas_width: preset.width,
+        canvas_height: preset.height,
+        slots: slots,
+    });
+}
 
 async function saveSlotCoordinates() {
     if (!selectedTemplate.value) return;
@@ -253,6 +393,17 @@ function deleteTemplate(template) {
 
                 <div class="flex items-center gap-2.5">
                     <button
+                        v-if="selectedTemplate"
+                        @click="downloadDesignGuide(selectedTemplate)"
+                        type="button"
+                        class="inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-teal-700 text-xs font-bold rounded-xl border border-teal-200 shadow-xs transition hover:border-teal-400"
+                        title="Download template gambar acuan untuk didesain di Canva, Photoshop, atau Figma"
+                    >
+                        <Download class="w-4 h-4 text-teal-600" />
+                        <span>Download Acuan Desain</span>
+                    </button>
+
+                    <button
                         @click="isAddingTemplate = true"
                         class="inline-flex items-center gap-2 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition shadow-sm"
                     >
@@ -407,6 +558,27 @@ function deleteTemplate(template) {
                             <p class="text-xs text-slate-500 leading-relaxed">
                                 Frame harus berformat <strong>PNG transparan</strong> tanpa latar belakang. Bagian foto pengunjung akan tembus terlihat melalui lubang transparan frame.
                             </p>
+
+                            <!-- Download Template Acuan Desain Box -->
+                            <div class="p-3.5 rounded-2xl bg-teal-50/70 border border-teal-200 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                                <div>
+                                    <div class="text-xs font-bold text-teal-900 flex items-center gap-1.5">
+                                        <Download class="w-3.5 h-3.5 text-teal-600" />
+                                        <span>Download Template Acuan Ukuran</span>
+                                    </div>
+                                    <div class="text-[11px] text-teal-700 mt-0.5">
+                                        Gunakan gambar acuan ini di Canva atau Photoshop agar posisi kotak foto presisi.
+                                    </div>
+                                </div>
+                                <button
+                                    @click="downloadDesignGuide(selectedTemplate)"
+                                    type="button"
+                                    class="shrink-0 px-3.5 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold transition shadow-xs flex items-center gap-1.5"
+                                >
+                                    <Download class="w-3.5 h-3.5" />
+                                    <span>Unduh PNG</span>
+                                </button>
+                            </div>
 
                             <div v-if="selectedTemplate.overlay_image_path" class="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200">
                                 <div class="w-12 h-16 rounded-lg border border-slate-300 overflow-hidden bg-white flex items-center justify-center p-1">
@@ -575,6 +747,29 @@ function deleteTemplate(template) {
                                             </div>
                                         </div>
                                     </div>
+                                </div>
+                            </div>
+
+                            <!-- Download Acuan Preset untuk Desainer -->
+                            <div class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200">
+                                <div class="text-xs font-bold text-slate-800 flex items-center gap-1.5 mb-1">
+                                    <Download class="w-3.5 h-3.5 text-teal-600" />
+                                    <span>Download Template Acuan Desain (Canva / Photoshop):</span>
+                                </div>
+                                <p class="text-[11px] text-slate-500 mb-2.5">
+                                    Pilih format layout yang ingin Anda buat. Buka file acuan ini di Canva atau Photoshop agar letak kotak foto 100% presisi.
+                                </p>
+                                <div class="flex flex-wrap gap-2">
+                                    <button
+                                        v-for="p in presets"
+                                        :key="p.id"
+                                        type="button"
+                                        @click="downloadPresetGuide(p)"
+                                        class="px-3 py-1.5 rounded-xl bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-300 text-slate-700 hover:text-teal-700 text-[11px] font-bold flex items-center gap-1.5 transition shadow-2xs"
+                                    >
+                                        <Download class="w-3 h-3 text-teal-600" />
+                                        <span>{{ p.name.split('(')[0].trim() }}</span>
+                                    </button>
                                 </div>
                             </div>
 

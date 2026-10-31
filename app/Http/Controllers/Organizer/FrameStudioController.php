@@ -215,6 +215,85 @@ class FrameStudioController extends Controller
         return back()->with('success', 'Frame PNG transparan berhasil diperbarui!');
     }
 
+    public function downloadGuide(Request $request, Event $event, FrameTemplate $template)
+    {
+        $this->authorizeEvent($request, $event);
+
+        $w = (int) $template->canvas_width;
+        $h = (int) $template->canvas_height;
+
+        $im = imagecreatetruecolor($w, $h);
+        imagealphablending($im, false);
+        imagesavealpha($im, true);
+
+        // Clean white background
+        $white = imagecolorallocatealpha($im, 255, 255, 255, 0);
+        imagefilledrectangle($im, 0, 0, $w, $h, $white);
+        imagealphablending($im, true);
+
+        // Guide Colors
+        $teal = imagecolorallocate($im, 13, 148, 136);       // #0D9488
+        $softTeal = imagecolorallocatealpha($im, 13, 148, 136, 110);
+        $slateDark = imagecolorallocate($im, 15, 23, 42);    // #0F172A
+        $slateLight = imagecolorallocate($im, 100, 116, 139); // #64748B
+
+        // Outer border
+        imagesetthickness($im, 4);
+        imagerectangle($im, 4, 4, $w - 4, $h - 4, $teal);
+
+        // Top Guide Header
+        imagestring($im, 5, 20, 20, "ACUAN DESAIN FRAME: " . strtoupper($template->name), $slateDark);
+        imagestring($im, 3, 20, 42, "Ukuran Canvas: {$w} x {$h} px | Format Ekspor: PNG 24-bit Transparan", $teal);
+        imagestring($im, 2, 20, 60, "PETUNJUK: Area kotak slot foto harus DIBUAT TRANSPARAN / BOLONG saat diekspor.", $slateLight);
+
+        // Draw Slots
+        foreach ($template->slots as $slot) {
+            $sx = (int) $slot->x_position;
+            $sy = (int) $slot->y_position;
+            $sw = (int) $slot->width;
+            $sh = (int) $slot->height;
+
+            // Fill slot with soft translucent tint
+            imagefilledrectangle($im, $sx, $sy, $sx + $sw, $sy + $sh, $softTeal);
+
+            // Border
+            imagesetthickness($im, 3);
+            imagerectangle($im, $sx, $sy, $sx + $sw, $sy + $sh, $teal);
+
+            // Diagonal lines
+            imageline($im, $sx, $sy, $sx + $sw, $sy + $sh, $softTeal);
+            imageline($im, $sx, $sy + $sh, $sx + $sw, $sy, $softTeal);
+
+            // Labels
+            $label = "AREA FOTO SLOT #" . $slot->slot_number;
+            $sizeStr = "{$sw} x {$sh} px ({$slot->aspect_ratio})";
+            $note = "[ BUAT TRANSPARAN / BOLONG ]";
+
+            $cx = $sx + ($sw / 2);
+            $cy = $sy + ($sh / 2);
+
+            imagestring($im, 5, max($sx + 10, (int)($cx - (strlen($label) * 4.5))), (int)($cy - 25), $label, $teal);
+            imagestring($im, 4, max($sx + 10, (int)($cx - (strlen($sizeStr) * 4))), (int)($cy), $sizeStr, $slateDark);
+            imagestring($im, 3, max($sx + 10, (int)($cx - (strlen($note) * 3.5))), (int)($cy + 22), $note, $slateLight);
+        }
+
+        // Footer Branding
+        $footer = "Luma Photobooth by YOTA INOVASI NUSANTARA";
+        imagestring($im, 3, (int)(($w - (strlen($footer) * 7)) / 2), $h - 30, $footer, $slateLight);
+
+        ob_start();
+        imagepng($im);
+        $imageData = ob_get_clean();
+        imagedestroy($im);
+
+        $safeName = Str::slug($template->name) . "-{$w}x{$h}-acuan-desain.png";
+
+        return response($imageData, 200, [
+            'Content-Type' => 'image/png',
+            'Content-Disposition' => 'attachment; filename="' . $safeName . '"',
+        ]);
+    }
+
     public function updateSlots(Request $request, Event $event, FrameTemplate $template): JsonResponse
     {
         $this->authorizeEvent($request, $event);
