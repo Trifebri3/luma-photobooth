@@ -8,6 +8,7 @@ use App\Http\Controllers\GalleryController;
 use App\Http\Controllers\Organizer\DashboardController as OrganizerDashboard;
 use App\Http\Controllers\Organizer\EventController as OrganizerEventController;
 use App\Http\Controllers\Organizer\FrameStudioController;
+use App\Http\Controllers\Organizer\PhotoController;
 use App\Http\Controllers\ProfileController;
 use App\Models\Event;
 use Illuminate\Foundation\Application;
@@ -73,6 +74,13 @@ Route::middleware(['auth'])->group(function () {
         // Events Management
         Route::resource('events', OrganizerEventController::class);
         Route::post('events/{event}/devices', [OrganizerEventController::class, 'createDevice'])->name('events.devices.store');
+        Route::get('events/{event}/photos/zip', [PhotoController::class, 'downloadEventZip'])->name('events.photos.zip');
+        
+        // Photos Gallery
+        Route::get('photos', [PhotoController::class, 'index'])->name('photos.index');
+        Route::get('photos/{photo}/image', [PhotoController::class, 'image'])->name('photos.image');
+        Route::get('photos/{photo}/download', [PhotoController::class, 'download'])->name('photos.download');
+        Route::delete('photos/{photo}', [PhotoController::class, 'destroy'])->name('photos.destroy');
         
         // Frame Studio
         Route::get('events/{event}/studio', [FrameStudioController::class, 'index'])->name('events.studio');

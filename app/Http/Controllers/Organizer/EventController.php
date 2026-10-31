@@ -126,12 +126,15 @@ class EventController extends Controller
             'settings',
             'devices',
             'frameTemplates.slots',
-            'visitors' => fn ($q) => $q->latest()->take(20),
-            'sessions' => fn ($q) => $q->with(['visitor', 'photo.accessTokens'])->latest()->take(15),
+            'visitors' => fn ($q) => $q->latest()->take(50),
+            'sessions' => fn ($q) => $q->whereHas('photo')->with(['visitor', 'photo.accessTokens', 'frameTemplate', 'device'])->latest()->take(50),
         ]);
+
+        $photosCount = \App\Models\Photo::whereHas('session', fn ($q) => $q->where('event_id', $event->id))->count();
 
         return Inertia::render('Organizer/Events/Show', [
             'event' => $event,
+            'photosCount' => $photosCount,
             'boothUrl' => url("/booth/{$event->slug}"),
         ]);
     }

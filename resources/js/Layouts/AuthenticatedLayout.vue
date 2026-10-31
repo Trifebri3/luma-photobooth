@@ -46,6 +46,12 @@ const showingNavigationDropdown = ref(false);
                                 >
                                     Event Saya
                                 </NavLink>
+                                <NavLink
+                                    :href="route('organizer.photos.index')"
+                                    :active="route().current('organizer.photos.*')"
+                                >
+                                    Galeri Foto
+                                </NavLink>
                                 <a
                                     href="/booth/festival-kreativitas-2026"
                                     target="_blank"
@@ -157,10 +163,22 @@ const showingNavigationDropdown = ref(false);
                 >
                     <div class="space-y-1 pb-3 pt-2">
                         <ResponsiveNavLink
-                            :href="route('dashboard')"
-                            :active="route().current('dashboard')"
+                            :href="route('organizer.dashboard')"
+                            :active="route().current('organizer.dashboard') || route().current('dashboard')"
                         >
                             Dashboard
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('organizer.events.index')"
+                            :active="route().current('organizer.events.*')"
+                        >
+                            Event Saya
+                        </ResponsiveNavLink>
+                        <ResponsiveNavLink
+                            :href="route('organizer.photos.index')"
+                            :active="route().current('organizer.photos.*')"
+                        >
+                            Galeri Foto
                         </ResponsiveNavLink>
                     </div>
 

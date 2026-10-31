@@ -1,1 +1,0 @@
-import{_ as o}from"./_plugin-vue_export-helper-DlAUqK2U.js";import{o as t,c}from"./app-ngOimaSe.js";const s={},e={src:"/logo.png",alt:"Luma Photobooth Logo",class:"h-10 w-auto object-contain drop-shadow-sm"};function n(r,a){return t(),c("img",e)}const m=o(s,[["render",n]]);export{m as A};

@@ -64,17 +64,23 @@ defineProps({
                         </div>
                     </div>
 
-                    <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
+                    <Link
+                        :href="route('organizer.photos.index')"
+                        class="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs hover:border-teal-400 hover:shadow-sm transition block group"
+                    >
                         <div class="flex items-center justify-between">
-                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider">Foto Terambil</span>
-                            <div class="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-600 flex items-center justify-center">
+                            <span class="text-xs font-bold text-slate-500 uppercase tracking-wider group-hover:text-teal-700 transition">Foto Terambil</span>
+                            <div class="w-8 h-8 rounded-lg bg-teal-50 text-teal-600 flex items-center justify-center group-hover:bg-teal-600 group-hover:text-white transition">
                                 <Camera class="w-4 h-4" />
                             </div>
                         </div>
-                        <div class="mt-3 text-2xl font-black text-slate-900">
-                            {{ stats.total_photos }}
+                        <div class="mt-3 flex items-baseline justify-between">
+                            <span class="text-2xl font-black text-slate-900">{{ stats.total_photos }}</span>
+                            <span class="text-[11px] font-bold text-teal-600 group-hover:translate-x-0.5 transition flex items-center gap-0.5">
+                                Lihat Galeri &rarr;
+                            </span>
                         </div>
-                    </div>
+                    </Link>
 
                     <div class="p-5 rounded-2xl bg-white border border-slate-200 shadow-xs">
                         <div class="flex items-center justify-between">
