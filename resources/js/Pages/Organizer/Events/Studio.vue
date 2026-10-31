@@ -1,10 +1,10 @@
 <script setup>
-import { ref, reactive, computed, watch } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
 import {
     LayoutGrid, Plus, Save, ArrowLeft, Trash2, Sliders, Image, Check, AlertCircle,
-    UploadCloud, Sparkles, Eye, EyeOff, Download
+    UploadCloud, Sparkles, Eye, EyeOff, Download, Move, Maximize2, Layers, AlignCenter
 } from 'lucide-vue-next';
 import axios from 'axios';
 
@@ -23,8 +23,23 @@ const activeSlots = ref(
     selectedTemplate.value ? JSON.parse(JSON.stringify(selectedTemplate.value.slots || [])) : []
 );
 
-// Toggle sample photo preview behind transparent frame
+// Drag & drop, resize, and selection state
+const selectedSlotIndex = ref(0);
+const isDragging = ref(false);
+const isResizing = ref(false);
+const hasUnsavedChanges = ref(false);
+
+let dragStartX = 0;
+let dragStartY = 0;
+let initialSlotX = 0;
+let initialSlotY = 0;
+let initialSlotW = 0;
+let initialSlotH = 0;
+let activeSlotIdx = -1;
+
+// Visual options
 const showSamplePhotos = ref(true);
+const overlayOpacity = ref(1.0); // 1.0, 0.7, 0.4, 0.1
 
 function formatOverlayUrl(path) {
     if (!path) return '';
@@ -35,7 +50,6 @@ function formatOverlayUrl(path) {
 
 function handleOverlayError(e) {
     console.warn('Frame overlay image failed to load, falling back:', e.target.src);
-    // If it failed to load, fallback to default cute frame
     if (!e.target.src.endsWith('kawaii-strip-3.png')) {
         e.target.src = '/frames/kawaii-strip-3.png';
     } else {
@@ -44,8 +58,14 @@ function handleOverlayError(e) {
 }
 
 function switchTemplate(tmpl) {
+    if (hasUnsavedChanges.value) {
+        const confirmSwitch = confirm('Ada perubahan posisi slot yang belum disimpan. Pindah template tanpa menyimpan?');
+        if (!confirmSwitch) return;
+    }
     selectedTemplateId.value = tmpl.id;
     activeSlots.value = JSON.parse(JSON.stringify(tmpl.slots || []));
+    selectedSlotIndex.value = 0;
+    hasUnsavedChanges.value = false;
 }
 
 // Visual Scale factor to fit canvas into container
@@ -68,6 +88,281 @@ const previewContainerHeight = computed(() => {
 // Slot coordination save
 const isSavingSlots = ref(false);
 const saveSuccessMessage = ref('');
+const saveErrorMessage = ref('');
+
+async function saveSlotCoordinates() {
+    if (!selectedTemplate.value) return;
+    isSavingSlots.value = true;
+    saveSuccessMessage.value = '';
+    saveErrorMessage.value = '';
+
+    // Sanitize values to clean integers
+    const payloadSlots = activeSlots.value.map(s => ({
+        id: s.id,
+        slot_number: Math.round(Number(s.slot_number)),
+        x_position: Math.round(Number(s.x_position)),
+        y_position: Math.round(Number(s.y_position)),
+        width: Math.round(Number(s.width)),
+        height: Math.round(Number(s.height)),
+        aspect_ratio: s.aspect_ratio || '4:3',
+    }));
+
+    try {
+        const res = await axios.post(
+            `/organizer/events/${props.event.id}/templates/${selectedTemplate.value.id}/slots`,
+            {
+                slots: payloadSlots,
+            }
+        );
+        if (res.data.success) {
+            saveSuccessMessage.value = res.data.message || 'Koordinat slot foto berhasil disimpan!';
+            hasUnsavedChanges.value = false;
+
+            // Sync saved slots with in-memory templates
+            if (res.data.slots && Array.isArray(res.data.slots)) {
+                activeSlots.value = JSON.parse(JSON.stringify(res.data.slots));
+                const tmpl = props.templates.find(t => t.id === selectedTemplate.value.id);
+                if (tmpl) {
+                    tmpl.slots = JSON.parse(JSON.stringify(res.data.slots));
+                }
+            } else {
+                const tmpl = props.templates.find(t => t.id === selectedTemplate.value.id);
+                if (tmpl) {
+                    tmpl.slots = JSON.parse(JSON.stringify(payloadSlots));
+                }
+            }
+            setTimeout(() => { saveSuccessMessage.value = ''; }, 3500);
+        }
+    } catch (err) {
+        console.error('Error saving slot coordinates:', err);
+        saveErrorMessage.value = err.response?.data?.message || 'Gagal menyimpan koordinat. Silakan coba lagi.';
+        setTimeout(() => { saveErrorMessage.value = ''; }, 5000);
+    } finally {
+        isSavingSlots.value = false;
+    }
+}
+
+// ----------------- DRAG & DROP AND RESIZE LOGIC -----------------
+
+function selectSlot(idx) {
+    selectedSlotIndex.value = idx;
+}
+
+function startDragSlot(idx, e) {
+    if (e.button !== undefined && e.button !== 0) return; // Primary button only
+    e.preventDefault();
+
+    selectedSlotIndex.value = idx;
+    activeSlotIdx = idx;
+    isDragging.value = true;
+
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    dragStartX = clientX;
+    dragStartY = clientY;
+    initialSlotX = activeSlots.value[idx].x_position;
+    initialSlotY = activeSlots.value[idx].y_position;
+
+    window.addEventListener('mousemove', onDragMove);
+    window.addEventListener('mouseup', onDragEnd);
+    window.addEventListener('touchmove', onDragMove, { passive: false });
+    window.addEventListener('touchend', onDragEnd);
+}
+
+function onDragMove(e) {
+    if (!isDragging.value || activeSlotIdx === -1 || !selectedTemplate.value) return;
+    if (e.cancelable) e.preventDefault();
+
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    const deltaX = (clientX - dragStartX) / scaleFactor.value;
+    const deltaY = (clientY - dragStartY) / scaleFactor.value;
+
+    const slot = activeSlots.value[activeSlotIdx];
+    const canvasW = selectedTemplate.value.canvas_width;
+    const canvasH = selectedTemplate.value.canvas_height;
+
+    let newX = Math.round(initialSlotX + deltaX);
+    let newY = Math.round(initialSlotY + deltaY);
+
+    // Keep slot within canvas boundaries
+    newX = Math.max(0, Math.min(newX, canvasW - slot.width));
+    newY = Math.max(0, Math.min(newY, canvasH - slot.height));
+
+    if (slot.x_position !== newX || slot.y_position !== newY) {
+        slot.x_position = newX;
+        slot.y_position = newY;
+        hasUnsavedChanges.value = true;
+    }
+}
+
+function onDragEnd() {
+    isDragging.value = false;
+    activeSlotIdx = -1;
+    window.removeEventListener('mousemove', onDragMove);
+    window.removeEventListener('mouseup', onDragEnd);
+    window.removeEventListener('touchmove', onDragMove);
+    window.removeEventListener('touchend', onDragEnd);
+}
+
+function startResizeSlot(idx, e) {
+    if (e.button !== undefined && e.button !== 0) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    selectedSlotIndex.value = idx;
+    activeSlotIdx = idx;
+    isResizing.value = true;
+
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    dragStartX = clientX;
+    dragStartY = clientY;
+    initialSlotW = activeSlots.value[idx].width;
+    initialSlotH = activeSlots.value[idx].height;
+
+    window.addEventListener('mousemove', onResizeMove);
+    window.addEventListener('mouseup', onResizeEnd);
+    window.addEventListener('touchmove', onResizeMove, { passive: false });
+    window.addEventListener('touchend', onResizeEnd);
+}
+
+function onResizeMove(e) {
+    if (!isResizing.value || activeSlotIdx === -1 || !selectedTemplate.value) return;
+    if (e.cancelable) e.preventDefault();
+
+    const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+    const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+
+    const deltaW = (clientX - dragStartX) / scaleFactor.value;
+    const deltaH = (clientY - dragStartY) / scaleFactor.value;
+
+    const slot = activeSlots.value[activeSlotIdx];
+    const canvasW = selectedTemplate.value.canvas_width;
+    const canvasH = selectedTemplate.value.canvas_height;
+
+    const minSize = 80;
+    const maxW = canvasW - slot.x_position;
+    const maxH = canvasH - slot.y_position;
+
+    let newW = Math.round(initialSlotW + deltaW);
+    let newH = Math.round(initialSlotH + deltaH);
+
+    newW = Math.max(minSize, Math.min(newW, maxW));
+    newH = Math.max(minSize, Math.min(newH, maxH));
+
+    if (slot.width !== newW || slot.height !== newH) {
+        slot.width = newW;
+        slot.height = newH;
+        hasUnsavedChanges.value = true;
+    }
+}
+
+function onResizeEnd() {
+    isResizing.value = false;
+    activeSlotIdx = -1;
+    window.removeEventListener('mousemove', onResizeMove);
+    window.removeEventListener('mouseup', onResizeEnd);
+    window.removeEventListener('touchmove', onResizeMove);
+    window.removeEventListener('touchend', onResizeEnd);
+}
+
+// Slot Alignment and Shape Helpers
+function centerSlotHorizontally(idx) {
+    if (!selectedTemplate.value || !activeSlots.value[idx]) return;
+    const slot = activeSlots.value[idx];
+    slot.x_position = Math.round((selectedTemplate.value.canvas_width - slot.width) / 2);
+    hasUnsavedChanges.value = true;
+}
+
+function centerSlotVertically(idx) {
+    if (!selectedTemplate.value || !activeSlots.value[idx]) return;
+    const slot = activeSlots.value[idx];
+    slot.y_position = Math.round((selectedTemplate.value.canvas_height - slot.height) / 2);
+    hasUnsavedChanges.value = true;
+}
+
+function applyAspectRatio(idx, ratioW, ratioH) {
+    if (!selectedTemplate.value || !activeSlots.value[idx]) return;
+    const slot = activeSlots.value[idx];
+    const newH = Math.round((slot.width * ratioH) / ratioW);
+    const canvasH = selectedTemplate.value.canvas_height;
+
+    if (slot.y_position + newH <= canvasH) {
+        slot.height = newH;
+    } else {
+        slot.height = canvasH - slot.y_position;
+        slot.width = Math.round((slot.height * ratioW) / ratioH);
+    }
+    slot.aspect_ratio = `${ratioW}:${ratioH}`;
+    hasUnsavedChanges.value = true;
+}
+
+function addSlot() {
+    if (!selectedTemplate.value) return;
+    const nextNum = activeSlots.value.length + 1;
+    const defaultW = Math.round(selectedTemplate.value.canvas_width * 0.85);
+    const defaultH = Math.round(defaultW * 0.75); // 4:3
+    const defaultX = Math.round((selectedTemplate.value.canvas_width - defaultW) / 2);
+    const defaultY = Math.min(
+        selectedTemplate.value.canvas_height - defaultH - 30,
+        Math.max(40, 50 + (nextNum - 1) * 60)
+    );
+
+    activeSlots.value.push({
+        slot_number: nextNum,
+        x_position: defaultX,
+        y_position: defaultY,
+        width: defaultW,
+        height: defaultH,
+        aspect_ratio: '4:3',
+    });
+    selectedSlotIndex.value = activeSlots.value.length - 1;
+    hasUnsavedChanges.value = true;
+}
+
+function removeSlot(idx) {
+    if (activeSlots.value.length <= 1) {
+        alert('Minimal harus ada 1 slot foto.');
+        return;
+    }
+    if (confirm(`Apakah Anda yakin ingin menghapus Slot #${activeSlots.value[idx].slot_number}?`)) {
+        activeSlots.value.splice(idx, 1);
+        activeSlots.value.forEach((s, i) => {
+            s.slot_number = i + 1;
+        });
+        selectedSlotIndex.value = Math.max(0, idx - 1);
+        hasUnsavedChanges.value = true;
+    }
+}
+
+// Keyboard shortcuts (Ctrl+S / Cmd+S) & navigation guard
+function handleKeyDown(e) {
+    if ((e.ctrlKey || e.metaKey) && (e.key === 's' || e.key === 'S')) {
+        e.preventDefault();
+        saveSlotCoordinates();
+    }
+}
+
+function handleBeforeUnload(e) {
+    if (hasUnsavedChanges.value) {
+        e.preventDefault();
+        e.returnValue = '';
+    }
+}
+
+onMounted(() => {
+    window.addEventListener('keydown', handleKeyDown);
+    window.addEventListener('beforeunload', handleBeforeUnload);
+});
+
+onUnmounted(() => {
+    window.removeEventListener('keydown', handleKeyDown);
+    window.removeEventListener('beforeunload', handleBeforeUnload);
+});
 
 // Download Template Acuan Desain (Canva / Photoshop / Figma)
 function downloadDesignGuide(template) {
@@ -207,29 +502,6 @@ function downloadPresetGuide(preset) {
         canvas_height: preset.height,
         slots: slots,
     });
-}
-
-async function saveSlotCoordinates() {
-    if (!selectedTemplate.value) return;
-    isSavingSlots.value = true;
-    saveSuccessMessage.value = '';
-
-    try {
-        const res = await axios.post(
-            `/organizer/events/${props.event.id}/templates/${selectedTemplate.value.id}/slots`,
-            {
-                slots: activeSlots.value,
-            }
-        );
-        if (res.data.success) {
-            saveSuccessMessage.value = res.data.message;
-            setTimeout(() => { saveSuccessMessage.value = ''; }, 3000);
-        }
-    } catch (err) {
-        alert(err.response?.data?.message || 'Gagal menyimpan koordinat.');
-    } finally {
-        isSavingSlots.value = false;
-    }
 }
 
 // Replace / Upload PNG Frame for Active Template
@@ -382,11 +654,11 @@ function deleteTemplate(template) {
                                 Frame Studio Visual
                             </h2>
                             <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-700 border border-teal-200">
-                                PNG Overlay Transparan
+                                Drag & Drop Editor
                             </span>
                         </div>
                         <p class="text-xs text-slate-500 mt-0.5">
-                            Unggah frame PNG tanpa background (transparan) dengan aneka layout lucu untuk event {{ event.name }}
+                            Atur posisi kotak foto secara visual (tarik & geser) di balik frame PNG transparan untuk {{ event.name }}
                         </p>
                     </div>
                 </div>
@@ -414,10 +686,17 @@ function deleteTemplate(template) {
                     <button
                         @click="saveSlotCoordinates"
                         :disabled="isSavingSlots || !selectedTemplate"
-                        class="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold rounded-xl shadow-md shadow-teal-600/20 transition disabled:opacity-50"
+                        :class="[
+                            'inline-flex items-center gap-2 px-4 py-2 text-white text-xs font-extrabold rounded-xl shadow-md transition disabled:opacity-50',
+                            hasUnsavedChanges
+                                ? 'bg-teal-600 hover:bg-teal-500 shadow-teal-600/30 ring-2 ring-teal-400 ring-offset-1 animate-pulse'
+                                : 'bg-teal-600 hover:bg-teal-500 shadow-teal-600/20'
+                        ]"
+                        title="Simpan posisi dan ukuran slot (Shortcut: Ctrl + S)"
                     >
                         <Save class="w-4 h-4" />
                         <span>{{ isSavingSlots ? 'Menyimpan...' : 'Simpan Koordinat' }}</span>
+                        <span v-if="hasUnsavedChanges" class="w-2 h-2 rounded-full bg-amber-300"></span>
                     </button>
                 </div>
             </div>
@@ -426,10 +705,18 @@ function deleteTemplate(template) {
         <div class="py-6">
             <div class="mx-auto max-w-7xl sm:px-6 lg:px-8 space-y-6">
 
-                <!-- Success Alert -->
-                <div v-if="saveSuccessMessage" class="p-4 rounded-2xl bg-teal-50 border border-teal-200 text-teal-800 text-xs font-semibold flex items-center gap-2 shadow-xs">
-                    <Check class="w-4 h-4 text-teal-600" />
-                    <span>{{ saveSuccessMessage }}</span>
+                <!-- Alert Feedback Messages -->
+                <div v-if="saveSuccessMessage" class="p-4 rounded-2xl bg-teal-50 border border-teal-200 text-teal-800 text-xs font-bold flex items-center justify-between shadow-xs">
+                    <div class="flex items-center gap-2">
+                        <Check class="w-4 h-4 text-teal-600" />
+                        <span>{{ saveSuccessMessage }}</span>
+                    </div>
+                    <span class="text-[10px] text-teal-600 bg-teal-100/70 px-2 py-0.5 rounded-full font-mono">Tersimpan</span>
+                </div>
+
+                <div v-if="saveErrorMessage" class="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-800 text-xs font-bold flex items-center gap-2 shadow-xs">
+                    <AlertCircle class="w-4 h-4 text-rose-600" />
+                    <span>{{ saveErrorMessage }}</span>
                 </div>
 
                 <!-- Template Selector Tabs -->
@@ -456,28 +743,72 @@ function deleteTemplate(template) {
                 <!-- Studio Workspace Grid -->
                 <div v-if="selectedTemplate" class="grid grid-cols-1 lg:grid-cols-12 gap-8 items-start">
                     
-                    <!-- Left: Visual Canvas Preview Area -->
+                    <!-- Left: Visual Canvas Preview Area with Drag & Drop -->
                     <div class="lg:col-span-7 bg-white rounded-3xl border border-slate-200 p-6 sm:p-8 shadow-sm flex flex-col items-center">
-                        <div class="w-full flex items-center justify-between text-xs text-slate-500 mb-4 pb-3 border-b border-slate-100">
+                        <div class="w-full flex flex-wrap items-center justify-between gap-3 text-xs text-slate-500 mb-4 pb-3 border-b border-slate-100">
                             <div>
                                 <span class="font-extrabold text-sm text-slate-900 block">{{ selectedTemplate.name }}</span>
-                                <span class="font-mono text-slate-400 text-[11px]">Resolusi: {{ selectedTemplate.canvas_width }} &times; {{ selectedTemplate.canvas_height }} px</span>
+                                <span class="font-mono text-slate-400 text-[11px]">Resolusi Kanvas: {{ selectedTemplate.canvas_width }} &times; {{ selectedTemplate.canvas_height }} px</span>
                             </div>
 
-                            <button
-                                @click="showSamplePhotos = !showSamplePhotos"
-                                type="button"
-                                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition"
-                            >
-                                <Eye v-if="showSamplePhotos" class="w-3.5 h-3.5 text-teal-600" />
-                                <EyeOff v-else class="w-3.5 h-3.5 text-slate-400" />
-                                <span>{{ showSamplePhotos ? 'Sembunyikan Foto Contoh' : 'Tampilkan Foto Contoh' }}</span>
-                            </button>
+                            <div class="flex items-center gap-2">
+                                <!-- Transparansi Frame Toggle -->
+                                <div class="inline-flex items-center gap-1 bg-slate-100 p-1 rounded-xl text-[11px] font-bold">
+                                    <span class="px-2 text-slate-500 flex items-center gap-1">
+                                        <Layers class="w-3 h-3 text-slate-400" />
+                                        <span>Frame:</span>
+                                    </span>
+                                    <button
+                                        type="button"
+                                        @click="overlayOpacity = 1.0"
+                                        :class="['px-2 py-0.5 rounded-lg transition', overlayOpacity === 1.0 ? 'bg-white text-teal-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900']"
+                                    >
+                                        100%
+                                    </button>
+                                    <button
+                                        type="button"
+                                        @click="overlayOpacity = 0.5"
+                                        :class="['px-2 py-0.5 rounded-lg transition', overlayOpacity === 0.5 ? 'bg-white text-teal-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900']"
+                                        title="Transparan 50% untuk melihat posisi slot di balik frame dengan jelas"
+                                    >
+                                        50%
+                                    </button>
+                                    <button
+                                        type="button"
+                                        @click="overlayOpacity = 0.05"
+                                        :class="['px-2 py-0.5 rounded-lg transition', overlayOpacity === 0.05 ? 'bg-white text-teal-700 shadow-2xs' : 'text-slate-600 hover:text-slate-900']"
+                                        title="Sembunyikan frame sementara"
+                                    >
+                                        Off
+                                    </button>
+                                </div>
+
+                                <button
+                                    @click="showSamplePhotos = !showSamplePhotos"
+                                    type="button"
+                                    class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 text-xs font-semibold transition"
+                                >
+                                    <Eye v-if="showSamplePhotos" class="w-3.5 h-3.5 text-teal-600" />
+                                    <EyeOff v-else class="w-3.5 h-3.5 text-slate-400" />
+                                    <span>{{ showSamplePhotos ? 'Foto Contoh' : 'Polos' }}</span>
+                                </button>
+                            </div>
                         </div>
 
-                        <!-- Canvas Simulator with Checkerboard background for transparency -->
+                        <!-- Instructions Pill -->
+                        <div class="w-full mb-4 px-3.5 py-2 rounded-2xl bg-teal-50/70 border border-teal-200 text-[11px] text-teal-900 flex items-center justify-between gap-2">
+                            <span class="flex items-center gap-1.5 font-medium">
+                                <Move class="w-3.5 h-3.5 text-teal-600 shrink-0" />
+                                <span><strong>Drag & Drop Aktif:</strong> Klik & geser kotak foto langsung di kanvas. Tarik sudut kanan bawah untuk resize.</span>
+                            </span>
+                            <span v-if="hasUnsavedChanges" class="px-2 py-0.5 rounded-full bg-amber-100 text-amber-800 text-[10px] font-extrabold shrink-0 border border-amber-300">
+                                Belum Disimpan
+                            </span>
+                        </div>
+
+                        <!-- Interactive Canvas Simulator -->
                         <div
-                            class="relative rounded-2xl border-4 border-slate-300 shadow-2xl overflow-hidden bg-white"
+                            class="relative rounded-2xl border-4 border-slate-300 shadow-2xl overflow-hidden bg-white select-none"
                             :style="{
                                 width: `${previewContainerWidth}px`,
                                 height: `${previewContainerHeight}px`,
@@ -486,11 +817,19 @@ function deleteTemplate(template) {
                                 backgroundPosition: '0 0, 8px 8px',
                             }"
                         >
-                            <!-- Sample Photos / Photo Slots underneath transparent frame -->
+                            <!-- Photo Slots (Draggable & Resizable) -->
                             <div
                                 v-for="(slot, idx) in activeSlots"
                                 :key="idx"
-                                class="absolute rounded-lg overflow-hidden flex flex-col items-center justify-center text-center transition-all shadow-md group"
+                                @mousedown="startDragSlot(idx, $event)"
+                                @touchstart="startDragSlot(idx, $event)"
+                                @click="selectSlot(idx)"
+                                :class="[
+                                    'absolute rounded-lg overflow-visible flex flex-col items-center justify-center text-center transition-shadow select-none cursor-move group',
+                                    selectedSlotIndex === idx
+                                        ? 'ring-2 ring-teal-500 shadow-xl z-20'
+                                        : 'hover:ring-2 hover:ring-teal-400 shadow-md z-5'
+                                ]"
                                 :style="{
                                     left: `${Math.round(slot.x_position * scaleFactor)}px`,
                                     top: `${Math.round(slot.y_position * scaleFactor)}px`,
@@ -498,22 +837,47 @@ function deleteTemplate(template) {
                                     height: `${Math.round(slot.height * scaleFactor)}px`,
                                 }"
                             >
-                                <!-- Sample Photo Image if enabled -->
-                                <img
-                                    v-if="showSamplePhotos"
-                                    :src="`https://picsum.photos/seed/luma${slot.slot_number + selectedTemplate.id * 5}/400/500`"
-                                    alt="Sample"
-                                    class="absolute inset-0 w-full h-full object-cover"
-                                />
+                                <!-- Sample Photo Container -->
+                                <div class="absolute inset-0 rounded-lg overflow-hidden pointer-events-none">
+                                    <img
+                                        v-if="showSamplePhotos"
+                                        :src="`https://picsum.photos/seed/luma${slot.slot_number + selectedTemplate.id * 5}/400/500`"
+                                        alt="Sample"
+                                        class="w-full h-full object-cover pointer-events-none select-none"
+                                        draggable="false"
+                                    />
+                                    <div v-else class="w-full h-full bg-slate-200/80 flex items-center justify-center"></div>
+                                </div>
 
                                 <!-- Slot Marker Overlay -->
-                                <div class="absolute inset-0 border-2 border-dashed border-teal-500 bg-teal-500/15 flex flex-col items-center justify-center p-2">
-                                    <span class="font-extrabold text-[11px] tracking-wider uppercase bg-teal-600 text-white px-2 py-0.5 rounded shadow">
-                                        Slot #{{ slot.slot_number }}
-                                    </span>
-                                    <span class="text-[9px] text-teal-900 font-mono mt-1 font-bold bg-white/80 px-1 rounded">
+                                <div
+                                    :class="[
+                                        'absolute inset-0 rounded-lg border-2 border-dashed flex flex-col items-center justify-center p-2 pointer-events-none transition-colors',
+                                        selectedSlotIndex === idx
+                                            ? 'border-teal-500 bg-teal-500/20'
+                                            : 'border-teal-400/80 bg-teal-500/10 group-hover:bg-teal-500/15'
+                                    ]"
+                                >
+                                    <div class="inline-flex items-center gap-1 font-extrabold text-[11px] tracking-wider uppercase bg-teal-600 text-white px-2 py-0.5 rounded shadow pointer-events-auto">
+                                        <Move class="w-2.5 h-2.5 opacity-80" />
+                                        <span>Slot #{{ slot.slot_number }}</span>
+                                    </div>
+                                    <span class="text-[9px] text-teal-950 font-mono mt-1 font-bold bg-white/95 px-1.5 py-0.5 rounded shadow-xs">
                                         {{ slot.width }}&times;{{ slot.height }}
                                     </span>
+                                </div>
+
+                                <!-- Resize Handle (Bottom-Right Corner) -->
+                                <div
+                                    @mousedown.stop="startResizeSlot(idx, $event)"
+                                    @touchstart.stop="startResizeSlot(idx, $event)"
+                                    class="absolute -bottom-1 -right-1 w-6 h-6 bg-teal-600 hover:bg-teal-700 text-white flex items-center justify-center rounded-tl-lg rounded-br cursor-se-resize shadow-lg z-30 transition hover:scale-115 active:scale-95 border border-white"
+                                    title="Tarik untuk resize ukuran kotak foto"
+                                >
+                                    <svg class="w-3 h-3 text-white pointer-events-none" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                                        <line x1="21" y1="9" x2="9" y2="21" />
+                                        <line x1="21" y1="15" x2="15" y2="21" />
+                                    </svg>
                                 </div>
                             </div>
 
@@ -522,16 +886,22 @@ function deleteTemplate(template) {
                                 v-if="selectedTemplate.overlay_image_path"
                                 :src="formatOverlayUrl(selectedTemplate.overlay_image_path)"
                                 @error="handleOverlayError"
-                                class="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
+                                class="absolute inset-0 w-full h-full object-contain pointer-events-none z-10 transition-opacity duration-200"
+                                :style="{ opacity: overlayOpacity }"
+                                draggable="false"
                             />
                         </div>
 
-                        <div class="mt-4 flex items-center justify-center gap-3 text-xs text-slate-500">
-                            <span class="flex items-center gap-1.5">
-                                <span class="w-3 h-3 rounded-full bg-teal-500"></span> Slot Foto
+                        <!-- Canvas Legend and Branding -->
+                        <div class="mt-4 flex flex-wrap items-center justify-center gap-4 text-xs text-slate-500">
+                            <span class="flex items-center gap-1.5 font-medium">
+                                <span class="w-3 h-3 rounded-full bg-teal-500"></span> Kotak Slot Foto (Bisa Digeser)
                             </span>
-                            <span class="flex items-center gap-1.5">
-                                <span class="w-3 h-3 rounded-full border border-slate-300 bg-white"></span> PNG Frame Transparan
+                            <span class="flex items-center gap-1.5 font-medium">
+                                <span class="w-3 h-3 rounded-full border border-slate-300 bg-white"></span> Frame PNG Transparan
+                            </span>
+                            <span class="text-[11px] text-slate-400 font-mono">
+                                • by YOTA INOVASI NUSANTARA
                             </span>
                         </div>
                     </div>
@@ -547,10 +917,10 @@ function deleteTemplate(template) {
                                     <span>Frame PNG Transparan</span>
                                 </h3>
 
-                                <span v-if="selectedTemplate.overlay_image_path" class="text-[11px] font-bold text-teal-600 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">
+                                <span v-if="selectedTemplate.overlay_image_path" class="text-[11px] font-bold text-teal-600 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200">
                                     PNG Aktif Terpasang
                                 </span>
-                                <span v-else class="text-[11px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full border border-amber-200">
+                                <span v-else class="text-[11px] font-bold text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
                                     Belum Ada PNG
                                 </span>
                             </div>
@@ -567,7 +937,7 @@ function deleteTemplate(template) {
                                         <span>Download Template Acuan Ukuran</span>
                                     </div>
                                     <div class="text-[11px] text-teal-700 mt-0.5">
-                                        Gunakan gambar acuan ini di Canva atau Photoshop agar posisi kotak foto presisi.
+                                        Gunakan acuan ini di Canva atau Photoshop agar posisi lubang foto presisi.
                                     </div>
                                 </div>
                                 <button
@@ -615,37 +985,134 @@ function deleteTemplate(template) {
                             </form>
                         </div>
 
-                        <!-- Card 2: Slot Coordinates Adjuster -->
+                        <!-- Card 2: Interactive Slot Editor & Coordinates -->
                         <div class="p-6 rounded-3xl bg-white border border-slate-200 shadow-sm space-y-4">
-                            <h3 class="font-extrabold text-sm text-slate-900 flex items-center justify-between">
-                                <span class="flex items-center gap-2">
+                            <div class="flex items-center justify-between">
+                                <h3 class="font-extrabold text-sm text-slate-900 flex items-center gap-2">
                                     <Sliders class="w-4 h-4 text-teal-600" />
-                                    <span>Posisi Slot Foto di Balik Frame</span>
-                                </span>
-                                <span class="text-xs font-bold text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200">
-                                    {{ activeSlots.length }} Slot
-                                </span>
-                            </h3>
+                                    <span>Pengaturan Slot Foto</span>
+                                </h3>
+                                
+                                <div class="flex items-center gap-2">
+                                    <button
+                                        type="button"
+                                        @click="addSlot"
+                                        class="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-bold transition border border-teal-200"
+                                        title="Tambah slot foto baru pada template ini"
+                                    >
+                                        <Plus class="w-3.5 h-3.5" />
+                                        <span>Tambah Slot</span>
+                                    </button>
 
-                            <div class="space-y-3 max-h-[380px] overflow-y-auto pr-1">
+                                    <span class="text-xs font-bold text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200">
+                                        {{ activeSlots.length }} Slot
+                                    </span>
+                                </div>
+                            </div>
+
+                            <p class="text-xs text-slate-500">
+                                Pilih slot untuk melihat posisinya, atau geser langsung di kanvas simulator sebelah kiri.
+                            </p>
+
+                            <!-- Slot List Cards -->
+                            <div class="space-y-3 max-h-[420px] overflow-y-auto pr-1">
                                 <div
                                     v-for="(slot, idx) in activeSlots"
                                     :key="idx"
-                                    class="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5"
+                                    @click="selectSlot(idx)"
+                                    :class="[
+                                        'p-3.5 rounded-2xl border transition-all space-y-2.5 cursor-pointer',
+                                        selectedSlotIndex === idx
+                                            ? 'border-teal-500 bg-teal-50/40 ring-1 ring-teal-500 shadow-xs'
+                                            : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                                    ]"
                                 >
                                     <div class="flex items-center justify-between text-xs font-bold text-slate-800">
                                         <span class="text-teal-700 flex items-center gap-1.5">
-                                            <span class="w-2 h-2 rounded-full bg-teal-500"></span>
+                                            <span class="w-2.5 h-2.5 rounded-full" :class="selectedSlotIndex === idx ? 'bg-teal-600 animate-pulse' : 'bg-teal-400'"></span>
                                             FOTO SLOT #{{ slot.slot_number }}
+                                            <span v-if="selectedSlotIndex === idx" class="text-[10px] text-teal-700 font-semibold bg-teal-100 px-1.5 py-0.2 rounded">
+                                                Aktif
+                                            </span>
                                         </span>
-                                        <span class="text-[11px] text-slate-400 font-mono">Rasio: {{ slot.aspect_ratio || '4:3' }}</span>
+                                        
+                                        <div class="flex items-center gap-2">
+                                            <span class="text-[11px] text-slate-400 font-mono">
+                                                {{ slot.width }}&times;{{ slot.height }} px
+                                            </span>
+                                            <button
+                                                v-if="activeSlots.length > 1"
+                                                type="button"
+                                                @click.stop="removeSlot(idx)"
+                                                class="p-1 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-rose-50 transition"
+                                                title="Hapus slot ini"
+                                            >
+                                                <Trash2 class="w-3.5 h-3.5" />
+                                            </button>
+                                        </div>
                                     </div>
 
-                                    <div class="grid grid-cols-2 gap-2 text-xs">
+                                    <!-- Quick Alignment & Aspect Ratio Helpers -->
+                                    <div class="flex flex-wrap items-center gap-1.5 pt-1 border-t border-slate-200/60">
+                                        <button
+                                            type="button"
+                                            @click.stop="centerSlotHorizontally(idx)"
+                                            class="px-2 py-0.5 rounded-lg bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-300 text-slate-600 hover:text-teal-700 text-[10px] font-bold transition flex items-center gap-1 shadow-2xs"
+                                            title="Posisikan pas di tengah horizontal kanvas"
+                                        >
+                                            <AlignCenter class="w-3 h-3 text-teal-600" />
+                                            <span>Rata Tengah H</span>
+                                        </button>
+
+                                        <button
+                                            type="button"
+                                            @click.stop="centerSlotVertically(idx)"
+                                            class="px-2 py-0.5 rounded-lg bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-300 text-slate-600 hover:text-teal-700 text-[10px] font-bold transition flex items-center gap-1 shadow-2xs"
+                                            title="Posisikan pas di tengah vertikal kanvas"
+                                        >
+                                            <AlignCenter class="w-3 h-3 rotate-90 text-teal-600" />
+                                            <span>Rata Tengah V</span>
+                                        </button>
+
+                                        <span class="text-slate-300 text-xs">|</span>
+
+                                        <button
+                                            type="button"
+                                            @click.stop="applyAspectRatio(idx, 1, 1)"
+                                            class="px-1.5 py-0.5 rounded-lg bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-300 text-slate-600 hover:text-teal-700 text-[10px] font-bold transition shadow-2xs"
+                                        >
+                                            1:1
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click.stop="applyAspectRatio(idx, 4, 3)"
+                                            class="px-1.5 py-0.5 rounded-lg bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-300 text-slate-600 hover:text-teal-700 text-[10px] font-bold transition shadow-2xs"
+                                        >
+                                            4:3
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click.stop="applyAspectRatio(idx, 3, 4)"
+                                            class="px-1.5 py-0.5 rounded-lg bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-300 text-slate-600 hover:text-teal-700 text-[10px] font-bold transition shadow-2xs"
+                                        >
+                                            3:4
+                                        </button>
+                                        <button
+                                            type="button"
+                                            @click.stop="applyAspectRatio(idx, 16, 9)"
+                                            class="px-1.5 py-0.5 rounded-lg bg-white hover:bg-teal-50 border border-slate-200 hover:border-teal-300 text-slate-600 hover:text-teal-700 text-[10px] font-bold transition shadow-2xs"
+                                        >
+                                            16:9
+                                        </button>
+                                    </div>
+
+                                    <!-- Numeric Inputs for Fine Precision -->
+                                    <div class="grid grid-cols-2 gap-2 text-xs pt-1">
                                         <div>
                                             <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Posisi X (px)</label>
                                             <input
                                                 v-model.number="slot.x_position"
+                                                @input="hasUnsavedChanges = true"
                                                 type="number"
                                                 class="w-full py-1.5 px-2.5 rounded-xl border border-slate-300 bg-white text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
                                             />
@@ -654,6 +1121,7 @@ function deleteTemplate(template) {
                                             <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Posisi Y (px)</label>
                                             <input
                                                 v-model.number="slot.y_position"
+                                                @input="hasUnsavedChanges = true"
                                                 type="number"
                                                 class="w-full py-1.5 px-2.5 rounded-xl border border-slate-300 bg-white text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
                                             />
@@ -662,6 +1130,7 @@ function deleteTemplate(template) {
                                             <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Lebar Slot (px)</label>
                                             <input
                                                 v-model.number="slot.width"
+                                                @input="hasUnsavedChanges = true"
                                                 type="number"
                                                 class="w-full py-1.5 px-2.5 rounded-xl border border-slate-300 bg-white text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
                                             />
@@ -670,6 +1139,7 @@ function deleteTemplate(template) {
                                             <label class="block text-[10px] font-bold text-slate-500 mb-0.5">Tinggi Slot (px)</label>
                                             <input
                                                 v-model.number="slot.height"
+                                                @input="hasUnsavedChanges = true"
                                                 type="number"
                                                 class="w-full py-1.5 px-2.5 rounded-xl border border-slate-300 bg-white text-xs font-mono font-bold text-slate-800 focus:border-teal-500 focus:ring-1 focus:ring-teal-500"
                                             />
@@ -678,6 +1148,7 @@ function deleteTemplate(template) {
                                 </div>
                             </div>
 
+                            <!-- Footer Actions: Delete Template & Save Button -->
                             <div class="pt-3 border-t border-slate-100 flex items-center justify-between">
                                 <button
                                     @click="deleteTemplate(selectedTemplate)"
@@ -692,9 +1163,15 @@ function deleteTemplate(template) {
                                     @click="saveSlotCoordinates"
                                     :disabled="isSavingSlots"
                                     type="button"
-                                    class="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold shadow-sm transition"
+                                    :class="[
+                                        'px-5 py-2.5 rounded-xl text-white text-xs font-extrabold shadow-sm transition flex items-center gap-2',
+                                        hasUnsavedChanges
+                                            ? 'bg-teal-600 hover:bg-teal-500 ring-2 ring-teal-400 ring-offset-1 animate-pulse'
+                                            : 'bg-teal-600 hover:bg-teal-500'
+                                    ]"
                                 >
-                                    Simpan Posisi
+                                    <Save class="w-4 h-4" />
+                                    <span>{{ isSavingSlots ? 'Menyimpan...' : 'Simpan Posisi (Ctrl+S)' }}</span>
                                 </button>
                             </div>
                         </div>
@@ -707,7 +1184,7 @@ function deleteTemplate(template) {
                     <div class="w-full max-w-2xl max-h-[90vh] overflow-y-auto p-6 sm:p-8 rounded-3xl bg-white border border-slate-200 shadow-2xl">
                         <div class="flex items-center justify-between mb-2">
                             <h3 class="text-xl font-extrabold text-slate-900">Input Frame PNG Transparan Baru</h3>
-                            <button @click="isAddingTemplate = false" class="p-1 rounded-lg text-slate-400 hover:text-slate-600">
+                            <button @click="isAddingTemplate = false" class="p-1 rounded-lg text-slate-400 hover:text-slate-600 text-xl font-bold">
                                 &times;
                             </button>
                         </div>

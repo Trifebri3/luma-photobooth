@@ -300,12 +300,12 @@ class FrameStudioController extends Controller
 
         $request->validate([
             'slots' => ['required', 'array'],
-            'slots.*.id' => ['nullable', 'integer'],
-            'slots.*.slot_number' => ['required', 'integer'],
-            'slots.*.x_position' => ['required', 'integer'],
-            'slots.*.y_position' => ['required', 'integer'],
-            'slots.*.width' => ['required', 'integer'],
-            'slots.*.height' => ['required', 'integer'],
+            'slots.*.id' => ['nullable', 'numeric'],
+            'slots.*.slot_number' => ['required', 'numeric'],
+            'slots.*.x_position' => ['required', 'numeric'],
+            'slots.*.y_position' => ['required', 'numeric'],
+            'slots.*.width' => ['required', 'numeric'],
+            'slots.*.height' => ['required', 'numeric'],
             'slots.*.aspect_ratio' => ['nullable', 'string'],
         ]);
 
@@ -314,14 +314,15 @@ class FrameStudioController extends Controller
         // Delete old slots and re-insert or update
         FrameSlot::where('frame_template_id', $template->id)->delete();
 
+        $savedSlots = [];
         foreach ($slots as $slotData) {
-            FrameSlot::create([
+            $savedSlots[] = FrameSlot::create([
                 'frame_template_id' => $template->id,
-                'slot_number' => $slotData['slot_number'],
-                'x_position' => (int) $slotData['x_position'],
-                'y_position' => (int) $slotData['y_position'],
-                'width' => (int) $slotData['width'],
-                'height' => (int) $slotData['height'],
+                'slot_number' => (int) round($slotData['slot_number']),
+                'x_position' => (int) round($slotData['x_position']),
+                'y_position' => (int) round($slotData['y_position']),
+                'width' => (int) round($slotData['width']),
+                'height' => (int) round($slotData['height']),
                 'aspect_ratio' => $slotData['aspect_ratio'] ?? '4:3',
             ]);
         }
@@ -329,6 +330,7 @@ class FrameStudioController extends Controller
         return response()->json([
             'success' => true,
             'message' => 'Koordinat slot foto berhasil disimpan!',
+            'slots' => $savedSlots,
         ]);
     }
 
