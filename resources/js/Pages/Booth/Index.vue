@@ -8,6 +8,7 @@ import {
 import confetti from 'canvas-confetti';
 import QRCode from 'qrcode';
 import axios from 'axios';
+import PwaInstallButton from '@/Components/PwaInstallButton.vue';
 
 const props = defineProps({
     event: Object,
@@ -503,6 +504,8 @@ onUnmounted(() => {
             </div>
 
             <div class="flex items-center space-x-2">
+                <PwaInstallButton />
+
                 <button
                     @click="toggleFullscreen"
                     class="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-600 transition-colors"

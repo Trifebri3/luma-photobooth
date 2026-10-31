@@ -22,6 +22,35 @@ createInertiaApp({
             .mount(el);
     },
     progress: {
-        color: '#4B5563',
+        color: '#0D9488',
     },
 });
+
+// PWA Service Worker Registration & Install Prompt Capture
+if (typeof window !== 'undefined') {
+    // Capture PWA beforeinstallprompt event globally
+    window.addEventListener('beforeinstallprompt', (e) => {
+        e.preventDefault();
+        window.deferredPwaPrompt = e;
+        window.dispatchEvent(new CustomEvent('pwa-prompt-ready', { detail: e }));
+    });
+
+    window.addEventListener('appinstalled', () => {
+        window.deferredPwaPrompt = null;
+        window.dispatchEvent(new CustomEvent('pwa-installed'));
+        console.log('Luma Photobooth PWA successfully installed');
+    });
+
+    // Register Service Worker in production / supported environments
+    if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+        window.addEventListener('load', () => {
+            navigator.serviceWorker.register('/sw.js')
+                .then((registration) => {
+                    console.log('Luma Photobooth SW registered with scope:', registration.scope);
+                })
+                .catch((error) => {
+                    console.warn('Luma Photobooth SW registration failed:', error);
+                });
+        });
+    }
+}

@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="tealGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#14B8A6"/>
+      <stop offset="100%" stop-color="#0F766E"/>
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="120%" height="120%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#0F766E" flood-opacity="0.25"/>
+    </filter>
+  </defs>
+
+  <!-- Background rounded squircle -->
+  <rect x="24" y="24" width="464" height="464" rx="100" fill="url(#tealGrad)" filter="url(#shadow)"/>
+
+  <!-- Inner subtle border -->
+  <rect x="24" y="24" width="464" height="464" rx="100" fill="none" stroke="#FFFFFF" stroke-opacity="0.2" stroke-width="4"/>
+
+  <!-- Camera Body -->
+  <rect x="116" y="180" width="280" height="200" rx="36" fill="#FFFFFF"/>
+  <path d="M192 180 L212 144 Q216 136 226 136 L286 136 Q296 136 300 144 L320 180 Z" fill="#FFFFFF"/>
+
+  <!-- Camera Lens Outer Ring -->
+  <circle cx="256" cy="280" r="64" fill="#F0FDFA" stroke="#0D9488" stroke-width="8"/>
+  
+  <!-- Camera Lens Inner -->
+  <circle cx="256" cy="280" r="44" fill="url(#tealGrad)"/>
+  
+  <!-- Lens Glare -->
+  <circle cx="242" cy="266" r="14" fill="#FFFFFF" fill-opacity="0.8"/>
+  <circle cx="268" cy="292" r="6" fill="#FFFFFF" fill-opacity="0.5"/>
+
+  <!-- Flash / Sensor -->
+  <circle cx="348" cy="216" r="12" fill="#0D9488"/>
+  <circle cx="164" cy="216" r="8" fill="#CCFBF1"/>
+
+  <!-- Decorative Sparkle / Flash Star -->
+  <path d="M 370 120 Q 380 135 395 145 Q 380 155 370 170 Q 360 155 345 145 Q 360 135 370 120 Z" fill="#FEF08A"/>
+</svg>
+

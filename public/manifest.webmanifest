@@ -1,0 +1,89 @@
+{
+  "name": "Luma Photobooth - by YOTA INOVASI NUSANTARA",
+  "short_name": "Luma Booth",
+  "description": "Platform Photobooth Digital & Self-Service Kiosk Multi-Event by YOTA INOVASI NUSANTARA",
+  "id": "/",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": [
+    "fullscreen",
+    "window-controls-overlay",
+    "standalone",
+    "minimal-ui"
+  ],
+  "orientation": "any",
+  "background_color": "#FFFFFF",
+  "theme_color": "#0D9488",
+  "categories": [
+    "photo",
+    "entertainment",
+    "utilities",
+    "productivity"
+  ],
+  "icons": [
+    {
+      "src": "/icons/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Kiosk Photobooth",
+      "short_name": "Kiosk",
+      "description": "Buka layar Kiosk Photobooth interaktif",
+      "url": "/booth/festival-kreativitas-2026",
+      "icons": [
+        {
+          "src": "/icons/icon-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Organizer Dashboard",
+      "short_name": "Organizer",
+      "description": "Kelola event, frame, dan sesi photobooth",
+      "url": "/organizer/dashboard",
+      "icons": [
+        {
+          "src": "/icons/icon-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    },
+    {
+      "name": "Admin Portal",
+      "short_name": "Admin",
+      "description": "Portal Super Admin Luma Photobooth",
+      "url": "/admin/login",
+      "icons": [
+        {
+          "src": "/icons/icon-192x192.png",
+          "sizes": "192x192"
+        }
+      ]
+    }
+  ]
+}
+

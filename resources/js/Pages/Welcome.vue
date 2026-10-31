@@ -1,6 +1,7 @@
 <script setup>
 import { Head, Link } from '@inertiajs/vue3';
 import { Camera, Sparkles, ShieldCheck, MessageSquare, Monitor, LayoutGrid, ArrowRight, CheckCircle2, Lock } from 'lucide-vue-next';
+import PwaInstallButton from '@/Components/PwaInstallButton.vue';
 
 defineProps({
     canLogin: Boolean,
@@ -39,6 +40,8 @@ defineProps({
                 </div>
 
                 <div class="flex items-center space-x-3">
+                    <PwaInstallButton />
+
                     <Link
                         :href="route('booth.show', demoSlug)"
                         class="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 transition-all hover:scale-105"
