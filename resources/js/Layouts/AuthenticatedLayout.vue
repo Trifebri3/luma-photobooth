@@ -52,13 +52,6 @@ const showingNavigationDropdown = ref(false);
                                 >
                                     Galeri Foto
                                 </NavLink>
-                                <a
-                                    href="/booth/festival-kreativitas-2026"
-                                    target="_blank"
-                                    class="inline-flex items-center px-1 pt-1 border-b-2 border-transparent text-sm font-semibold leading-5 text-teal-600 hover:text-teal-700 hover:border-teal-500 transition"
-                                >
-                                    Layar Booth (Demo) &nearr;
-                                </a>
                             </div>
                         </div>
 

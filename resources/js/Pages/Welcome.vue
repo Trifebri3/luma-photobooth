@@ -107,6 +107,7 @@ defineProps({
 
                 <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
                     <Link
+                        v-if="demoSlug"
                         :href="route('booth.show', demoSlug)"
                         class="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-extrabold text-base shadow-xl shadow-teal-600/25 transition-all hover:scale-105"
                     >
@@ -115,7 +116,16 @@ defineProps({
                         <ArrowRight class="w-4 h-4 ml-1" />
                     </Link>
 
+                    <Link
+                        v-if="$page.props.auth?.user"
+                        :href="route('organizer.dashboard')"
+                        class="w-full sm:w-auto inline-flex items-center justify-center gap-2 px-7 py-4 rounded-2xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-base transition-all shadow-xs"
+                    >
+                        <span>Ke Dashboard Organizer</span>
+                        <ArrowRight class="w-4 h-4" />
+                    </Link>
                     <a
+                        v-else
                         :href="route('auth.google.redirect')"
                         class="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-7 py-4 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 font-bold text-base transition-all shadow-xs"
                     >
@@ -127,52 +137,6 @@ defineProps({
                         </svg>
                         <span>Daftar / Masuk Google</span>
                     </a>
-                </div>
-
-                <!-- Info Akses Portal & Akun Demo -->
-                <div class="mt-12 p-6 rounded-3xl bg-white border border-slate-200 text-left max-w-2xl mx-auto shadow-sm">
-                    <div class="flex items-center justify-between text-xs font-bold text-slate-500 mb-3 pb-2 border-b border-slate-100">
-                        <span class="flex items-center gap-2 text-teal-600">
-                            <span class="w-2.5 h-2.5 rounded-full bg-teal-500 animate-ping"></span>
-                            Panduan Akses Portal & Akun Demo
-                        </span>
-                        <span class="text-slate-400 font-mono">Fonnte WA Gateway Aktif</span>
-                    </div>
-
-                    <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 text-xs">
-                        <!-- Super Admin Card -->
-                        <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                            <div class="flex items-center gap-1.5 text-teal-700 font-bold mb-1">
-                                <Lock class="w-3.5 h-3.5" />
-                                <span>Super Admin:</span>
-                            </div>
-                            <div class="font-mono text-slate-800 text-[11px]">admin@luma.test</div>
-                            <div class="font-mono text-slate-500 text-[11px]">Pass: password</div>
-                            <Link :href="route('admin.login')" class="inline-block mt-2 text-[11px] font-bold text-teal-600 hover:underline">
-                                Buka Login Admin &rarr;
-                            </Link>
-                        </div>
-
-                        <!-- Organizer Card -->
-                        <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                            <div class="text-teal-700 font-bold mb-1">Organizer Event:</div>
-                            <div class="font-mono text-slate-800 text-[11px]">organizer@luma.test</div>
-                            <div class="font-mono text-slate-500 text-[11px]">Pass: password</div>
-                            <Link :href="route('login')" class="inline-block mt-2 text-[11px] font-bold text-teal-600 hover:underline">
-                                Buka Login Organizer &rarr;
-                            </Link>
-                        </div>
-
-                        <!-- Kiosk Device Card -->
-                        <div class="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                            <div class="text-teal-700 font-bold mb-1">Kiosk Pairing Code:</div>
-                            <div class="font-mono text-teal-700 font-extrabold text-base">LUMA26</div>
-                            <div class="text-slate-400 text-[11px]">Touchscreen #01</div>
-                            <Link :href="route('booth.show', demoSlug)" class="inline-block mt-2 text-[11px] font-bold text-teal-600 hover:underline">
-                                Buka Layar Booth &rarr;
-                            </Link>
-                        </div>
-                    </div>
                 </div>
             </div>
 

@@ -28,16 +28,6 @@ const submit = () => {
         onFinish: () => form.reset('password'),
     });
 };
-
-function fillOrganizer() {
-    form.email = 'organizer@luma.test';
-    form.password = 'password';
-}
-
-function fillAdmin() {
-    form.email = 'admin@luma.test';
-    form.password = 'password';
-}
 </script>
 
 <template>
@@ -133,29 +123,6 @@ function fillAdmin() {
                 </PrimaryButton>
             </div>
         </form>
-
-        <!-- 1-Click Quick Fill for Demo -->
-        <div class="mt-6 pt-4 border-t border-slate-100 space-y-2">
-            <div class="text-[11px] font-bold text-slate-400 uppercase text-center mb-1">
-                Akun Demo Cepat
-            </div>
-            <div class="grid grid-cols-2 gap-2">
-                <button
-                    type="button"
-                    @click="fillOrganizer"
-                    class="py-1.5 px-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold"
-                >
-                    Organizer Demo
-                </button>
-                <button
-                    type="button"
-                    @click="fillAdmin"
-                    class="py-1.5 px-2 rounded-lg bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-semibold"
-                >
-                    Super Admin Demo
-                </button>
-            </div>
-        </div>
 
         <!-- Super Admin Link & Register Link -->
         <div class="mt-6 pt-4 border-t border-slate-100 flex flex-col items-center gap-2 text-xs">
