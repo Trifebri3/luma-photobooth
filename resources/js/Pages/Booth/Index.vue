@@ -122,9 +122,22 @@ async function handlePairDevice() {
     }
 }
 
-// Step Transitions
+// Step Transitions: Visitor picks frame first, then takes photos!
 function startPhotobooth() {
-    currentStep.value = 'register';
+    currentStep.value = 'select_frame';
+}
+
+function selectFrameAndProceed(template) {
+    selectedTemplate.value = template;
+    capturedShots.value = [];
+    currentSlotIndex.value = 0;
+    retakesUsedPerSlot.value = {};
+
+    if (!activeVisitor.value) {
+        currentStep.value = 'register';
+    } else {
+        initCameraAndStart();
+    }
 }
 
 async function submitVisitorRegistration() {
@@ -152,13 +165,8 @@ async function submitVisitorRegistration() {
             sessionInfo.number = res.data.session_number;
             sessionInfo.remaining = res.data.remaining_sessions;
             
-            // Advance to frame selection or camera
-            if (props.event.frame_templates?.length > 1) {
-                currentStep.value = 'select_frame';
-            } else {
-                selectedTemplate.value = props.event.frame_templates?.[0] || null;
-                initCameraAndStart();
-            }
+            // Frame is already selected -> go directly to Camera!
+            initCameraAndStart();
         }
     } catch (err) {
         if (err.response?.data?.quota_exceeded) {
@@ -169,11 +177,6 @@ async function submitVisitorRegistration() {
     } finally {
         isSubmittingVisitor.value = false;
     }
-}
-
-function selectFrameAndProceed(template) {
-    selectedTemplate.value = template;
-    initCameraAndStart();
 }
 
 async function initCameraAndStart() {
@@ -372,16 +375,18 @@ async function compositeAndFinish() {
             }
         }
 
-        // 4. Draw Event Branding Footer in dark slate & teal
-        ctx.fillStyle = '#0F172A'; // Slate 900
-        ctx.font = 'bold 36px sans-serif';
-        ctx.textAlign = 'center';
-        ctx.fillText(props.event.name, canvasW / 2, canvasH - 75);
+        // 4. Draw Event Branding Footer only if no custom overlay or if watermark is requested
+        if (!template?.overlay_image_path || props.event.settings?.watermark_enabled) {
+            ctx.fillStyle = '#0F172A'; // Slate 900
+            ctx.font = 'bold 32px sans-serif';
+            ctx.textAlign = 'center';
+            ctx.fillText(props.event.name, canvasW / 2, canvasH - 75);
 
-        ctx.font = 'bold 22px sans-serif';
-        ctx.fillStyle = '#0D9488'; // Teal 600
-        const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
-        ctx.fillText(`${dateStr} • Luma Photobooth`, canvasW / 2, canvasH - 35);
+            ctx.font = 'bold 20px sans-serif';
+            ctx.fillStyle = '#0D9488'; // Teal 600
+            const dateStr = new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' });
+            ctx.fillText(`${dateStr} • by YOTA INOVASI NUSANTARA`, canvasW / 2, canvasH - 35);
+        }
 
         // 5. Generate final high-res Data URL
         const finalDataUrl = canvas.toDataURL('image/jpeg', 0.92);
@@ -611,10 +616,26 @@ onUnmounted(() => {
 
             <!-- STEP 1: VISITOR REGISTRATION -->
             <div v-else-if="currentStep === 'register'" class="w-full max-w-md p-8 rounded-3xl bg-white border border-slate-200 shadow-xl">
+                <!-- Selected Frame Banner -->
+                <div v-if="selectedTemplate" class="mb-5 p-3 rounded-2xl bg-teal-50 border border-teal-200 flex items-center gap-3 text-left">
+                    <div class="w-12 h-14 rounded-lg bg-white border border-teal-200 overflow-hidden flex items-center justify-center p-0.5">
+                        <img v-if="selectedTemplate.overlay_image_path" :src="selectedTemplate.overlay_image_path" class="w-full h-full object-contain" />
+                        <Camera v-else class="w-5 h-5 text-teal-600" />
+                    </div>
+                    <div class="flex-1 min-w-0">
+                        <div class="text-[10px] uppercase font-bold text-teal-600 tracking-wider">Frame Terpilih</div>
+                        <div class="text-xs font-extrabold text-slate-900 truncate">{{ selectedTemplate.name }}</div>
+                        <div class="text-[11px] text-teal-700 font-semibold">{{ totalSlots }} Pose Foto</div>
+                    </div>
+                    <button @click="currentStep = 'select_frame'" type="button" class="text-[11px] font-bold text-teal-600 hover:text-teal-800 underline">
+                        Ganti
+                    </button>
+                </div>
+
                 <div class="text-center mb-6">
-                    <h2 class="text-2xl font-extrabold text-slate-900">Data Pengunjung</h2>
+                    <h2 class="text-2xl font-extrabold text-slate-900">Identitas Pengunjung</h2>
                     <p class="text-slate-500 text-xs mt-1">
-                        Masukkan identitas untuk menerima link foto ke WhatsApp Anda
+                        Masukkan nomor WhatsApp untuk menerima tautan foto setelah sesi selesai
                     </p>
                 </div>
 
@@ -636,7 +657,7 @@ onUnmounted(() => {
 
                     <div>
                         <label class="block text-xs font-bold text-slate-700 mb-1.5">
-                            Nomor WhatsApp * (Untuk Tautan Foto)
+                            Nomor WhatsApp * (Untuk Pengiriman Foto)
                         </label>
                         <input
                             v-model="visitorForm.phone_number"
@@ -663,46 +684,98 @@ onUnmounted(() => {
                             :disabled="isSubmittingVisitor"
                             class="w-full py-4 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-extrabold text-base transition-all shadow-lg shadow-teal-600/30 flex items-center justify-center gap-2"
                         >
-                            <span>{{ isSubmittingVisitor ? 'Memverifikasi...' : 'Lanjut Pilih Frame' }}</span>
+                            <Camera class="w-5 h-5" />
+                            <span>{{ isSubmittingVisitor ? 'Memverifikasi...' : 'Lanjut Ambil Foto' }}</span>
                             <ArrowRight class="w-5 h-5" />
                         </button>
 
                         <button
-                            @click="resetToWelcome"
+                            @click="currentStep = 'select_frame'"
                             class="w-full mt-3 py-2 text-xs text-slate-500 hover:text-slate-700 font-semibold transition-colors"
                         >
-                            Batal & Kembali
+                            &larr; Ganti Pilihan Frame
                         </button>
                     </div>
                 </div>
             </div>
 
             <!-- STEP 2: SELECT FRAME TEMPLATE -->
-            <div v-else-if="currentStep === 'select_frame'" class="w-full max-w-4xl p-6 text-center">
-                <h2 class="text-3xl font-extrabold text-slate-900 mb-2">Pilih Desain Frame</h2>
-                <p class="text-slate-500 text-sm mb-8">Pilih gaya template favorit Anda untuk sesi foto ini</p>
+            <div v-else-if="currentStep === 'select_frame'" class="w-full max-w-5xl p-6 text-center">
+                <div class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-teal-50 text-teal-700 text-xs font-bold border border-teal-200 mb-2">
+                    <Sparkles class="w-3.5 h-3.5 text-teal-600" />
+                    <span>Aneka Frame Lucu & Berbagai Layout</span>
+                </div>
+                <h2 class="text-3xl font-extrabold text-slate-900 mb-2">Pilih Desain Frame Favorit</h2>
+                <p class="text-slate-500 text-sm mb-8 max-w-md mx-auto">Sentuh frame yang Anda sukai. Jumlah foto akan otomatis menyesuaikan dengan tata letak frame!</p>
 
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-6 max-w-3xl mx-auto">
+                <div class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-5 mx-auto">
                     <div
                         v-for="tmpl in event.frame_templates"
                         :key="tmpl.id"
                         @click="selectFrameAndProceed(tmpl)"
-                        class="p-5 rounded-3xl bg-white border-2 border-slate-200 hover:border-teal-500 cursor-pointer transition-all transform hover:-translate-y-2 text-left group shadow-sm hover:shadow-lg"
+                        class="p-4 rounded-3xl bg-white border-2 border-slate-200 hover:border-teal-500 cursor-pointer transition-all transform hover:-translate-y-2 text-left group shadow-xs hover:shadow-xl hover:shadow-teal-600/10 flex flex-col justify-between relative"
                     >
-                        <div class="aspect-[3/4] rounded-2xl bg-slate-50 border border-slate-200 flex items-center justify-center p-4 mb-4 overflow-hidden relative">
-                            <div class="text-center">
+                        <!-- Top Badge -->
+                        <div class="absolute top-6 right-6 z-10">
+                            <span class="px-2.5 py-1 rounded-full text-[10px] font-extrabold bg-teal-600 text-white shadow-sm">
+                                {{ tmpl.slots?.length || 3 }} Foto
+                            </span>
+                        </div>
+
+                        <!-- Frame Preview Card with Simulated Sample Photo behind transparent cutouts -->
+                        <div class="aspect-[3/4] rounded-2xl bg-slate-50 border border-slate-200 mb-3 overflow-hidden relative flex items-center justify-center p-2">
+                            <!-- Background pattern -->
+                            <div class="absolute inset-0 bg-gradient-to-b from-teal-50/50 to-slate-100"></div>
+
+                            <!-- Sample Photos in Slots -->
+                            <div
+                                v-for="slot in tmpl.slots"
+                                :key="slot.id"
+                                class="absolute rounded bg-teal-200/50 overflow-hidden"
+                                :style="{
+                                    left: `${(slot.x_position / tmpl.canvas_width) * 100}%`,
+                                    top: `${(slot.y_position / tmpl.canvas_height) * 100}%`,
+                                    width: `${(slot.width / tmpl.canvas_width) * 100}%`,
+                                    height: `${(slot.height / tmpl.canvas_height) * 100}%`,
+                                }"
+                            >
+                                <img
+                                    :src="`https://picsum.photos/seed/thumb${slot.id + tmpl.id * 7}/200/200`"
+                                    class="w-full h-full object-cover opacity-85"
+                                />
+                            </div>
+
+                            <!-- Transparent PNG Frame Overlay -->
+                            <img
+                                v-if="tmpl.overlay_image_path"
+                                :src="tmpl.overlay_image_path"
+                                class="absolute inset-0 w-full h-full object-contain pointer-events-none z-1"
+                            />
+                            <div v-else class="relative z-1 text-center">
                                 <div class="text-teal-600 font-extrabold text-base mb-1">{{ tmpl.slots?.length || 3 }} Foto</div>
-                                <div class="text-[11px] text-slate-400 uppercase tracking-widest font-mono font-bold">{{ tmpl.orientation }}</div>
+                                <div class="text-[10px] text-slate-400 uppercase tracking-widest font-mono font-bold">{{ tmpl.orientation }}</div>
                             </div>
                         </div>
 
-                        <div class="font-extrabold text-base text-slate-900 group-hover:text-teal-600 transition-colors">
-                            {{ tmpl.name }}
-                        </div>
-                        <div class="text-xs text-slate-500 mt-1">
-                            Ukuran {{ tmpl.canvas_width }} &times; {{ tmpl.canvas_height }} px
+                        <div>
+                            <div class="font-extrabold text-sm text-slate-900 group-hover:text-teal-600 transition-colors line-clamp-1">
+                                {{ tmpl.name }}
+                            </div>
+                            <div class="text-[11px] text-slate-400 font-medium mt-0.5 flex items-center justify-between">
+                                <span class="capitalize">{{ tmpl.orientation }}</span>
+                                <span class="text-teal-600 font-bold">Pilih &rarr;</span>
+                            </div>
                         </div>
                     </div>
+                </div>
+
+                <div class="mt-8">
+                    <button
+                        @click="currentStep = 'welcome'"
+                        class="px-6 py-2 text-xs font-semibold text-slate-500 hover:text-slate-700 transition"
+                    >
+                        &larr; Batal & Kembali ke Awal
+                    </button>
                 </div>
             </div>
 
@@ -711,10 +784,13 @@ onUnmounted(() => {
                 <!-- Status Header -->
                 <div class="w-full flex items-center justify-between px-4 mb-3 text-sm">
                     <div class="flex items-center gap-2">
-                        <span class="px-3.5 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs font-extrabold">
-                            Foto {{ currentSlotIndex + 1 }} dari {{ totalSlots }}
+                        <span class="px-3.5 py-1 rounded-full bg-teal-600 text-white text-xs font-extrabold shadow-xs">
+                            Pose {{ currentSlotIndex + 1 }} dari {{ totalSlots }}
                         </span>
-                        <span class="text-slate-600 text-xs">Pengunjung: <strong class="text-slate-900">{{ activeVisitor?.name }}</strong></span>
+                        <span class="text-xs font-extrabold text-teal-800 bg-teal-50 px-3 py-1 rounded-full border border-teal-200 truncate max-w-xs">
+                            {{ selectedTemplate?.name }}
+                        </span>
+                        <span class="hidden sm:inline text-slate-500 text-xs">Pengunjung: <strong class="text-slate-800">{{ activeVisitor?.name }}</strong></span>
                     </div>
 
                     <button
@@ -736,6 +812,20 @@ onUnmounted(() => {
                         muted
                         class="w-full h-full object-cover transform -scale-x-100"
                     ></video>
+
+                    <!-- Camera Flash Overlay -->
+                    <div
+                        v-if="isFlashing"
+                        class="absolute inset-0 bg-white z-20 pointer-events-none transition-opacity duration-300"
+                    ></div>
+
+                    <!-- Mini Frame Preview in Corner -->
+                    <div
+                        v-if="selectedTemplate?.overlay_image_path"
+                        class="absolute bottom-4 right-4 z-10 w-16 h-22 rounded-xl bg-white/90 backdrop-blur-xs p-1 shadow-lg border border-teal-200 pointer-events-none hidden sm:flex items-center justify-center"
+                    >
+                        <img :src="selectedTemplate.overlay_image_path" class="w-full h-full object-contain" />
+                    </div>
 
                     <!-- Camera Error Notice -->
                     <div v-if="cameraError" class="absolute inset-0 bg-white/95 flex flex-col items-center justify-center p-6 text-center">
@@ -775,7 +865,15 @@ onUnmounted(() => {
                 <h2 class="text-2xl font-extrabold text-slate-900 mb-2">Tinjau Foto Anda</h2>
                 <p class="text-slate-500 text-xs mb-6">Anda dapat mengulang (retake) foto bila kurang puas sebelum dicetak ke frame.</p>
 
-                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-8">
+                <div
+                    class="grid gap-4 mb-8"
+                    :class="[
+                        capturedShots.length === 1 ? 'max-w-xs mx-auto grid-cols-1' : '',
+                        capturedShots.length === 2 ? 'max-w-lg mx-auto grid-cols-2' : '',
+                        capturedShots.length === 3 ? 'max-w-3xl mx-auto grid-cols-1 sm:grid-cols-3' : '',
+                        capturedShots.length >= 4 ? 'max-w-4xl mx-auto grid-cols-2 sm:grid-cols-4' : '',
+                    ]"
+                >
                     <div
                         v-for="(shot, idx) in capturedShots"
                         :key="idx"

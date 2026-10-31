@@ -35,6 +35,7 @@ class FrameStudioController extends Controller
         $validated = $request->validate([
             'name' => ['required', 'string', 'max:150'],
             'orientation' => ['required', 'in:portrait,landscape,strip'],
+            'layout_preset' => ['nullable', 'string', 'in:strip_3,grid_4,duo_2,polaroid_1,strip_4,custom'],
             'canvas_width' => ['required', 'integer', 'min:400', 'max:3840'],
             'canvas_height' => ['required', 'integer', 'min:400', 'max:3840'],
             'overlay_image' => ['nullable', 'image', 'mimes:png', 'max:8192'], // PNG overlay max 8MB
@@ -58,12 +59,61 @@ class FrameStudioController extends Controller
             'sort_order' => $event->frameTemplates()->count() + 1,
         ]);
 
-        // Generate smart default slot placements
+        // Generate smart default slot placements based on layout preset
+        $preset = $validated['layout_preset'] ?? null;
         $count = $validated['slot_count'];
         $w = $validated['canvas_width'];
         $h = $validated['canvas_height'];
 
-        if ($validated['orientation'] === 'strip') {
+        if ($preset === 'grid_4' || ($count === 4 && $validated['orientation'] === 'portrait')) {
+            // 2x2 Grid Layout
+            $slotW = floor(($w - 180) / 2);
+            $slotH = floor(($h - 260) / 2);
+            $positions = [
+                ['x' => 60, 'y' => 80],
+                ['x' => 120 + $slotW, 'y' => 80],
+                ['x' => 60, 'y' => 140 + $slotH],
+                ['x' => 120 + $slotW, 'y' => 140 + $slotH],
+            ];
+            foreach ($positions as $idx => $pos) {
+                FrameSlot::create([
+                    'frame_template_id' => $template->id,
+                    'slot_number' => $idx + 1,
+                    'x_position' => (int) $pos['x'],
+                    'y_position' => (int) $pos['y'],
+                    'width' => (int) $slotW,
+                    'height' => (int) $slotH,
+                    'aspect_ratio' => '3:4',
+                ]);
+            }
+        } elseif ($preset === 'polaroid_1' || $count === 1) {
+            // 1 Large Center Polaroid Slot
+            $side = min($w - 160, $h - 350);
+            FrameSlot::create([
+                'frame_template_id' => $template->id,
+                'slot_number' => 1,
+                'x_position' => (int) floor(($w - $side) / 2),
+                'y_position' => 100,
+                'width' => (int) $side,
+                'height' => (int) $side,
+                'aspect_ratio' => '1:1',
+            ]);
+        } elseif ($preset === 'duo_2' || $count === 2) {
+            // 2 Stacked Slots
+            $slotH = floor(($h - 240) / 2);
+            $slotW = $w - 140;
+            for ($i = 1; $i <= 2; $i++) {
+                FrameSlot::create([
+                    'frame_template_id' => $template->id,
+                    'slot_number' => $i,
+                    'x_position' => 70,
+                    'y_position' => 80 + (($i - 1) * ($slotH + 50)),
+                    'width' => (int) $slotW,
+                    'height' => (int) $slotH,
+                    'aspect_ratio' => '16:9',
+                ]);
+            }
+        } elseif ($validated['orientation'] === 'strip' || $preset === 'strip_3' || $preset === 'strip_4') {
             $slotH = floor(($h - 120 - (($count - 1) * 30)) / $count);
             $slotW = $w - 80;
             for ($i = 1; $i <= $count; $i++) {
@@ -72,13 +122,13 @@ class FrameStudioController extends Controller
                     'slot_number' => $i,
                     'x_position' => 40,
                     'y_position' => 60 + (($i - 1) * ($slotH + 30)),
-                    'width' => $slotW,
-                    'height' => $slotH,
+                    'width' => (int) $slotW,
+                    'height' => (int) $slotH,
                     'aspect_ratio' => '4:3',
                 ]);
             }
         } else {
-            // Grid or vertical arrangement
+            // Default vertical arrangement
             $slotH = floor(($h - 200 - (($count - 1) * 40)) / $count);
             $slotW = floor($w - 160);
             for ($i = 1; $i <= $count; $i++) {
@@ -87,14 +137,32 @@ class FrameStudioController extends Controller
                     'slot_number' => $i,
                     'x_position' => 80,
                     'y_position' => 100 + (($i - 1) * ($slotH + 40)),
-                    'width' => $slotW,
-                    'height' => $slotH,
+                    'width' => (int) $slotW,
+                    'height' => (int) $slotH,
                     'aspect_ratio' => '16:9',
                 ]);
             }
         }
 
-        return back()->with('success', "Template '{$template->name}' berhasil ditambahkan.");
+        return back()->with('success', "Template '{$template->name}' dengan frame PNG berhasil ditambahkan.");
+    }
+
+    public function updateOverlay(Request $request, Event $event, FrameTemplate $template): RedirectResponse
+    {
+        $this->authorizeEvent($request, $event);
+
+        $request->validate([
+            'overlay_image' => ['required', 'image', 'mimes:png', 'max:8192'],
+        ]);
+
+        $overlayPath = $request->file('overlay_image')->store('public/frames/overlays');
+        $overlayUrl = Storage::url($overlayPath);
+
+        $template->update([
+            'overlay_image_path' => $overlayUrl,
+        ]);
+
+        return back()->with('success', 'Frame PNG transparan berhasil diperbarui!');
     }
 
     public function updateSlots(Request $request, Event $event, FrameTemplate $template): JsonResponse

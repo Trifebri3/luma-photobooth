@@ -84,58 +84,110 @@ class DatabaseSeeder extends Seeder
             ]
         );
 
-        // 6. Frame Templates
-        // Template 1: Strip 3 Photos
+        // 6. Frame Templates (Cute PNG Overlays with Various Layouts)
+        // Template 1: Kawaii Korean Photostrip (3 Vertical Slots)
         $stripTemplate = FrameTemplate::updateOrCreate(
-            ['event_id' => $event->id, 'name' => 'Vintage 3-Photo Strip'],
+            ['event_id' => $event->id, 'name' => 'Kawaii Korean Photostrip (3 Foto)'],
             [
                 'canvas_width' => 600,
                 'canvas_height' => 1800,
                 'orientation' => 'strip',
+                'overlay_image_path' => '/frames/kawaii-strip-3.png',
                 'is_active' => true,
                 'sort_order' => 1,
             ]
         );
 
         FrameSlot::where('frame_template_id', $stripTemplate->id)->delete();
-        // 3 vertical slots
         FrameSlot::create([
             'frame_template_id' => $stripTemplate->id,
             'slot_number' => 1,
             'x_position' => 50,
-            'y_position' => 60,
+            'y_position' => 80,
             'width' => 500,
-            'height' => 450,
+            'height' => 470,
             'aspect_ratio' => '4:3',
         ]);
         FrameSlot::create([
             'frame_template_id' => $stripTemplate->id,
             'slot_number' => 2,
             'x_position' => 50,
-            'y_position' => 560,
+            'y_position' => 590,
             'width' => 500,
-            'height' => 450,
+            'height' => 470,
             'aspect_ratio' => '4:3',
         ]);
         FrameSlot::create([
             'frame_template_id' => $stripTemplate->id,
             'slot_number' => 3,
             'x_position' => 50,
-            'y_position' => 1060,
+            'y_position' => 1100,
             'width' => 500,
-            'height' => 450,
+            'height' => 470,
             'aspect_ratio' => '4:3',
         ]);
 
-        // Template 2: Duo Landscape / Portrait Collage
-        $duoTemplate = FrameTemplate::updateOrCreate(
-            ['event_id' => $event->id, 'name' => 'Modern Duo Clean Frame'],
+        // Template 2: Y2K Sparkle Grid (4 Foto 2x2)
+        $gridTemplate = FrameTemplate::updateOrCreate(
+            ['event_id' => $event->id, 'name' => 'Y2K Sparkle Grid (4 Foto • 2x2)'],
             [
                 'canvas_width' => 1200,
                 'canvas_height' => 1600,
                 'orientation' => 'portrait',
+                'overlay_image_path' => '/frames/y2k-grid-4.png',
                 'is_active' => true,
                 'sort_order' => 2,
+            ]
+        );
+
+        FrameSlot::where('frame_template_id', $gridTemplate->id)->delete();
+        FrameSlot::create([
+            'frame_template_id' => $gridTemplate->id,
+            'slot_number' => 1,
+            'x_position' => 70,
+            'y_position' => 100,
+            'width' => 500,
+            'height' => 640,
+            'aspect_ratio' => '3:4',
+        ]);
+        FrameSlot::create([
+            'frame_template_id' => $gridTemplate->id,
+            'slot_number' => 2,
+            'x_position' => 630,
+            'y_position' => 100,
+            'width' => 500,
+            'height' => 640,
+            'aspect_ratio' => '3:4',
+        ]);
+        FrameSlot::create([
+            'frame_template_id' => $gridTemplate->id,
+            'slot_number' => 3,
+            'x_position' => 70,
+            'y_position' => 780,
+            'width' => 500,
+            'height' => 640,
+            'aspect_ratio' => '3:4',
+        ]);
+        FrameSlot::create([
+            'frame_template_id' => $gridTemplate->id,
+            'slot_number' => 4,
+            'x_position' => 630,
+            'y_position' => 780,
+            'width' => 500,
+            'height' => 640,
+            'aspect_ratio' => '3:4',
+        ]);
+
+        // Template 3: Cute Pastel Duo (2 Foto Stacked)
+        $duoTemplate = FrameTemplate::updateOrCreate(
+            ['event_id' => $event->id, 'name' => 'Cute Pastel Duo (2 Foto)'],
+            [
+                'canvas_width' => 1200,
+                'canvas_height' => 1600,
+                'orientation' => 'portrait',
+                'overlay_image_path' => '/frames/cute-duo-2.png',
+                'is_active' => true,
+                'sort_order' => 3,
             ]
         );
 
@@ -144,7 +196,7 @@ class DatabaseSeeder extends Seeder
             'frame_template_id' => $duoTemplate->id,
             'slot_number' => 1,
             'x_position' => 80,
-            'y_position' => 100,
+            'y_position' => 90,
             'width' => 1040,
             'height' => 650,
             'aspect_ratio' => '16:9',
@@ -153,21 +205,22 @@ class DatabaseSeeder extends Seeder
             'frame_template_id' => $duoTemplate->id,
             'slot_number' => 2,
             'x_position' => 80,
-            'y_position' => 800,
+            'y_position' => 790,
             'width' => 1040,
             'height' => 650,
             'aspect_ratio' => '16:9',
         ]);
 
-        // Template 3: Polaroid Single Shot
+        // Template 4: Vintage Polaroid Doodles (1 Solo Shot)
         $polaroidTemplate = FrameTemplate::updateOrCreate(
-            ['event_id' => $event->id, 'name' => 'Polaroid Signature (1 Shot)'],
+            ['event_id' => $event->id, 'name' => 'Vintage Polaroid Doodles (1 Foto)'],
             [
                 'canvas_width' => 1200,
                 'canvas_height' => 1500,
                 'orientation' => 'portrait',
+                'overlay_image_path' => '/frames/polaroid-doodle-1.png',
                 'is_active' => true,
-                'sort_order' => 3,
+                'sort_order' => 4,
             ]
         );
 
@@ -180,6 +233,57 @@ class DatabaseSeeder extends Seeder
             'width' => 1000,
             'height' => 1000,
             'aspect_ratio' => '1:1',
+        ]);
+
+        // Template 5: Retro Cine Strip (4 Foto Vertical)
+        $retroStripTemplate = FrameTemplate::updateOrCreate(
+            ['event_id' => $event->id, 'name' => 'Retro Cine Strip (4 Foto)'],
+            [
+                'canvas_width' => 600,
+                'canvas_height' => 2000,
+                'orientation' => 'strip',
+                'overlay_image_path' => '/frames/retro-strip-4.png',
+                'is_active' => true,
+                'sort_order' => 5,
+            ]
+        );
+
+        FrameSlot::where('frame_template_id', $retroStripTemplate->id)->delete();
+        FrameSlot::create([
+            'frame_template_id' => $retroStripTemplate->id,
+            'slot_number' => 1,
+            'x_position' => 50,
+            'y_position' => 70,
+            'width' => 500,
+            'height' => 410,
+            'aspect_ratio' => '4:3',
+        ]);
+        FrameSlot::create([
+            'frame_template_id' => $retroStripTemplate->id,
+            'slot_number' => 2,
+            'x_position' => 50,
+            'y_position' => 515,
+            'width' => 500,
+            'height' => 410,
+            'aspect_ratio' => '4:3',
+        ]);
+        FrameSlot::create([
+            'frame_template_id' => $retroStripTemplate->id,
+            'slot_number' => 3,
+            'x_position' => 50,
+            'y_position' => 960,
+            'width' => 500,
+            'height' => 410,
+            'aspect_ratio' => '4:3',
+        ]);
+        FrameSlot::create([
+            'frame_template_id' => $retroStripTemplate->id,
+            'slot_number' => 4,
+            'x_position' => 50,
+            'y_position' => 1405,
+            'width' => 500,
+            'height' => 410,
+            'aspect_ratio' => '4:3',
         ]);
     }
 }

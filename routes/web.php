@@ -78,6 +78,7 @@ Route::middleware(['auth'])->group(function () {
         Route::get('events/{event}/studio', [FrameStudioController::class, 'index'])->name('events.studio');
         Route::post('events/{event}/templates', [FrameStudioController::class, 'store'])->name('events.templates.store');
         Route::post('events/{event}/templates/{template}/slots', [FrameStudioController::class, 'updateSlots'])->name('events.templates.slots.update');
+        Route::post('events/{event}/templates/{template}/overlay', [FrameStudioController::class, 'updateOverlay'])->name('events.templates.overlay.update');
         Route::delete('events/{event}/templates/{template}', [FrameStudioController::class, 'destroy'])->name('events.templates.destroy');
     });
 
