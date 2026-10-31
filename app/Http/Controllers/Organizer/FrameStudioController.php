@@ -22,9 +22,26 @@ class FrameStudioController extends Controller
 
         $templates = $event->frameTemplates()->with('slots')->get();
 
+        // Auto-heal any template with missing or broken overlay paths
+        foreach ($templates as $t) {
+            if (empty($t->overlay_image_path) || str_starts_with($t->overlay_image_path, 'public/') || str_starts_with($t->overlay_image_path, '/storage/public/')) {
+                $count = $t->slots->count();
+                if ($t->orientation === 'strip') {
+                    $newPath = ($count === 4) ? '/frames/retro-strip-4.png' : '/frames/kawaii-strip-3.png';
+                } elseif ($count === 1) {
+                    $newPath = '/frames/polaroid-doodle-1.png';
+                } elseif ($count === 2) {
+                    $newPath = '/frames/cute-duo-2.png';
+                } else {
+                    $newPath = '/frames/y2k-grid-4.png';
+                }
+                $t->update(['overlay_image_path' => $newPath]);
+            }
+        }
+
         return Inertia::render('Organizer/Events/Studio', [
             'event' => $event,
-            'templates' => $templates,
+            'templates' => $event->frameTemplates()->with('slots')->get(),
         ]);
     }
 
@@ -42,10 +59,37 @@ class FrameStudioController extends Controller
             'slot_count' => ['required', 'integer', 'min:1', 'max:6'],
         ]);
 
+        $preset = $validated['layout_preset'] ?? null;
         $overlayPath = null;
+
         if ($request->hasFile('overlay_image')) {
-            $overlayPath = $request->file('overlay_image')->store('public/frames/overlays');
-            $overlayPath = Storage::url($overlayPath);
+            $file = $request->file('overlay_image');
+            $uploadDir = public_path('frames/uploads');
+            if (!is_dir($uploadDir)) {
+                mkdir($uploadDir, 0777, true);
+            }
+            $filename = Str::uuid() . '.png';
+            $file->move($uploadDir, $filename);
+            $overlayPath = '/frames/uploads/' . $filename;
+        } elseif ($preset) {
+            $presetFrames = [
+                'strip_3' => '/frames/kawaii-strip-3.png',
+                'grid_4' => '/frames/y2k-grid-4.png',
+                'duo_2' => '/frames/cute-duo-2.png',
+                'polaroid_1' => '/frames/polaroid-doodle-1.png',
+                'strip_4' => '/frames/retro-strip-4.png',
+            ];
+            $overlayPath = $presetFrames[$preset] ?? '/frames/kawaii-strip-3.png';
+        } else {
+            if ($validated['orientation'] === 'strip') {
+                $overlayPath = ($validated['slot_count'] == 4) ? '/frames/retro-strip-4.png' : '/frames/kawaii-strip-3.png';
+            } elseif ($validated['slot_count'] == 1) {
+                $overlayPath = '/frames/polaroid-doodle-1.png';
+            } elseif ($validated['slot_count'] == 2) {
+                $overlayPath = '/frames/cute-duo-2.png';
+            } else {
+                $overlayPath = '/frames/y2k-grid-4.png';
+            }
         }
 
         $template = FrameTemplate::create([
@@ -155,8 +199,14 @@ class FrameStudioController extends Controller
             'overlay_image' => ['required', 'image', 'mimes:png', 'max:8192'],
         ]);
 
-        $overlayPath = $request->file('overlay_image')->store('public/frames/overlays');
-        $overlayUrl = Storage::url($overlayPath);
+        $file = $request->file('overlay_image');
+        $uploadDir = public_path('frames/uploads');
+        if (!is_dir($uploadDir)) {
+            mkdir($uploadDir, 0777, true);
+        }
+        $filename = Str::uuid() . '.png';
+        $file->move($uploadDir, $filename);
+        $overlayUrl = '/frames/uploads/' . $filename;
 
         $template->update([
             'overlay_image_path' => $overlayUrl,

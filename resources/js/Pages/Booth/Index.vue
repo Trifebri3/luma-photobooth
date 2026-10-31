@@ -122,6 +122,20 @@ async function handlePairDevice() {
     }
 }
 
+// Helper for robust overlay image loading
+function formatOverlayUrl(path) {
+    if (!path) return '/frames/kawaii-strip-3.png';
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    if (path.startsWith('/')) return path;
+    return '/' + path;
+}
+
+function handleOverlayError(e) {
+    if (!e.target.src.endsWith('kawaii-strip-3.png')) {
+        e.target.src = '/frames/kawaii-strip-3.png';
+    }
+}
+
 // Step Transitions: Visitor picks frame first, then takes photos!
 function startPhotobooth() {
     currentStep.value = 'select_frame';
@@ -426,11 +440,22 @@ async function compositeAndFinish() {
 
 function loadImage(src) {
     return new Promise((resolve, reject) => {
+        const cleanSrc = src.startsWith('http') || src.startsWith('data:') || src.startsWith('/') ? src : '/' + src;
         const img = new Image();
         img.crossOrigin = 'anonymous';
         img.onload = () => resolve(img);
-        img.onerror = reject;
-        img.src = src;
+        img.onerror = () => {
+            if (!cleanSrc.startsWith('data:') && !cleanSrc.endsWith('kawaii-strip-3.png')) {
+                const fallbackImg = new Image();
+                fallbackImg.crossOrigin = 'anonymous';
+                fallbackImg.onload = () => resolve(fallbackImg);
+                fallbackImg.onerror = reject;
+                fallbackImg.src = '/frames/kawaii-strip-3.png';
+            } else {
+                reject(new Error('Failed to load image: ' + cleanSrc));
+            }
+        };
+        img.src = cleanSrc;
     });
 }
 
@@ -748,7 +773,8 @@ onUnmounted(() => {
                             <!-- Transparent PNG Frame Overlay -->
                             <img
                                 v-if="tmpl.overlay_image_path"
-                                :src="tmpl.overlay_image_path"
+                                :src="formatOverlayUrl(tmpl.overlay_image_path)"
+                                @error="handleOverlayError"
                                 class="absolute inset-0 w-full h-full object-contain pointer-events-none z-1"
                             />
                             <div v-else class="relative z-1 text-center">

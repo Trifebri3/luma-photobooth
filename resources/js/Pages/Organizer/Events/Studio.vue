@@ -26,6 +26,23 @@ const activeSlots = ref(
 // Toggle sample photo preview behind transparent frame
 const showSamplePhotos = ref(true);
 
+function formatOverlayUrl(path) {
+    if (!path) return '';
+    if (path.startsWith('http://') || path.startsWith('https://')) return path;
+    if (path.startsWith('/')) return path;
+    return '/' + path;
+}
+
+function handleOverlayError(e) {
+    console.warn('Frame overlay image failed to load, falling back:', e.target.src);
+    // If it failed to load, fallback to default cute frame
+    if (!e.target.src.endsWith('kawaii-strip-3.png')) {
+        e.target.src = '/frames/kawaii-strip-3.png';
+    } else {
+        e.target.style.display = 'none';
+    }
+}
+
 function switchTemplate(tmpl) {
     selectedTemplateId.value = tmpl.id;
     activeSlots.value = JSON.parse(JSON.stringify(tmpl.slots || []));
@@ -113,6 +130,7 @@ const presets = [
         height: 1800,
         orientation: 'strip',
         slots: 3,
+        overlay: '/frames/kawaii-strip-3.png',
         description: 'Format Korea aesthetic dengan 3 pose vertikal',
     },
     {
@@ -122,6 +140,7 @@ const presets = [
         height: 1600,
         orientation: 'portrait',
         slots: 4,
+        overlay: '/frames/y2k-grid-4.png',
         description: 'Format kolase 4 foto kotak Y2K / party vibes',
     },
     {
@@ -131,6 +150,7 @@ const presets = [
         height: 1600,
         orientation: 'portrait',
         slots: 2,
+        overlay: '/frames/cute-duo-2.png',
         description: 'Format elegan 2 foto landscape bertumpuk',
     },
     {
@@ -140,6 +160,7 @@ const presets = [
         height: 1500,
         orientation: 'portrait',
         slots: 1,
+        overlay: '/frames/polaroid-doodle-1.png',
         description: 'Format polaroid klasik dengan margin bawah lebar',
     },
     {
@@ -149,6 +170,7 @@ const presets = [
         height: 2000,
         orientation: 'strip',
         slots: 4,
+        overlay: '/frames/retro-strip-4.png',
         description: 'Strip film bioskop retro panjang dengan 4 pose',
     },
 ];
@@ -163,7 +185,7 @@ const newTemplateForm = useForm({
     overlay_image: null,
 });
 
-const newOverlayPreviewUrl = ref('');
+const newOverlayPreviewUrl = ref('/frames/kawaii-strip-3.png');
 
 function applyPreset(preset) {
     selectedPreset.value = preset.id;
@@ -173,6 +195,7 @@ function applyPreset(preset) {
     newTemplateForm.canvas_width = preset.width;
     newTemplateForm.canvas_height = preset.height;
     newTemplateForm.slot_count = preset.slots;
+    newOverlayPreviewUrl.value = preset.overlay;
 }
 
 function handleOverlayUpload(e) {
@@ -346,8 +369,8 @@ function deleteTemplate(template) {
                             <!-- Transparent PNG Frame Overlay on TOP of photos -->
                             <img
                                 v-if="selectedTemplate.overlay_image_path"
-                                :src="selectedTemplate.overlay_image_path"
-                                alt="Frame PNG Overlay"
+                                :src="formatOverlayUrl(selectedTemplate.overlay_image_path)"
+                                @error="handleOverlayError"
                                 class="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
                             />
                         </div>
@@ -387,7 +410,7 @@ function deleteTemplate(template) {
 
                             <div v-if="selectedTemplate.overlay_image_path" class="flex items-center gap-3 p-3 rounded-2xl bg-slate-50 border border-slate-200">
                                 <div class="w-12 h-16 rounded-lg border border-slate-300 overflow-hidden bg-white flex items-center justify-center p-1">
-                                    <img :src="selectedTemplate.overlay_image_path" class="w-full h-full object-contain" />
+                                    <img :src="formatOverlayUrl(selectedTemplate.overlay_image_path)" @error="handleOverlayError" class="w-full h-full object-contain" />
                                 </div>
                                 <div class="flex-1 min-w-0">
                                     <div class="text-xs font-bold text-slate-800 truncate">{{ selectedTemplate.name }}.png</div>
@@ -531,20 +554,25 @@ function deleteTemplate(template) {
                                         :key="preset.id"
                                         @click="applyPreset(preset)"
                                         :class="[
-                                            'p-3.5 rounded-2xl border-2 cursor-pointer transition-all text-left flex flex-col justify-between',
+                                            'p-3 rounded-2xl border-2 cursor-pointer transition-all text-left flex items-center gap-3',
                                             selectedPreset === preset.id
                                                 ? 'border-teal-500 bg-teal-50/60 text-teal-950 shadow-sm'
                                                 : 'border-slate-200 bg-slate-50 hover:border-slate-300 text-slate-700'
                                         ]"
                                     >
-                                        <div class="flex items-center justify-between mb-1">
-                                            <span class="font-extrabold text-xs text-slate-900">{{ preset.name }}</span>
-                                            <span class="text-[10px] font-bold px-2 py-0.5 rounded-full" :class="selectedPreset === preset.id ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-700'">
-                                                {{ preset.slots }} Foto
-                                            </span>
+                                        <div class="w-10 h-14 rounded-lg bg-white border border-slate-200 overflow-hidden shrink-0 p-0.5 flex items-center justify-center shadow-xs">
+                                            <img :src="preset.overlay" class="w-full h-full object-contain" />
                                         </div>
-                                        <div class="text-[11px] text-slate-500 leading-tight">
-                                            {{ preset.description }}
+                                        <div class="flex-1 min-w-0">
+                                            <div class="flex items-center justify-between mb-0.5">
+                                                <span class="font-extrabold text-xs text-slate-900 truncate">{{ preset.name }}</span>
+                                                <span class="text-[10px] font-bold px-1.5 py-0.2 rounded-full shrink-0" :class="selectedPreset === preset.id ? 'bg-teal-600 text-white' : 'bg-slate-200 text-slate-700'">
+                                                    {{ preset.slots }} Foto
+                                                </span>
+                                            </div>
+                                            <div class="text-[11px] text-slate-500 leading-tight line-clamp-2">
+                                                {{ preset.description }}
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
@@ -597,9 +625,12 @@ function deleteTemplate(template) {
                                     class="w-full text-xs text-slate-500 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-teal-600 file:text-white hover:file:bg-teal-500 transition cursor-pointer"
                                 />
 
-                                <div v-if="newOverlayPreviewUrl" class="mt-3 flex items-center gap-3">
-                                    <img :src="newOverlayPreviewUrl" class="h-16 w-auto rounded border border-teal-300 bg-white object-contain" />
-                                    <span class="text-xs text-teal-800 font-bold">Preview PNG transparan siap disimpan!</span>
+                                <div v-if="newOverlayPreviewUrl" class="mt-3 flex items-center gap-3 p-2.5 rounded-xl bg-white border border-teal-200">
+                                    <img :src="formatOverlayUrl(newOverlayPreviewUrl)" class="h-16 w-auto rounded border border-teal-300 bg-white object-contain" />
+                                    <div>
+                                        <span class="text-xs text-teal-800 font-bold block">Frame PNG Siap Digunakan</span>
+                                        <span class="text-[10px] text-slate-500">Jika tidak memilih file custom, frame lucu bawaan preset ini otomatis terpasang.</span>
+                                    </div>
                                 </div>
                             </div>
 
