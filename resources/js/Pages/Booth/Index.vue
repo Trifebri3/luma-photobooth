@@ -644,7 +644,7 @@ onUnmounted(() => {
                 <!-- Selected Frame Banner -->
                 <div v-if="selectedTemplate" class="mb-5 p-3 rounded-2xl bg-teal-50 border border-teal-200 flex items-center gap-3 text-left">
                     <div class="w-12 h-14 rounded-lg bg-white border border-teal-200 overflow-hidden flex items-center justify-center p-0.5">
-                        <img v-if="selectedTemplate.overlay_image_path" :src="selectedTemplate.overlay_image_path" class="w-full h-full object-contain" />
+                        <img v-if="selectedTemplate.overlay_image_path" :src="formatOverlayUrl(selectedTemplate.overlay_image_path)" class="w-full h-full object-contain" />
                         <Camera v-else class="w-5 h-5 text-teal-600" />
                     </div>
                     <div class="flex-1 min-w-0">
@@ -748,38 +748,49 @@ onUnmounted(() => {
                         </div>
 
                         <!-- Frame Preview Card with Simulated Sample Photo behind transparent cutouts -->
-                        <div class="aspect-[3/4] rounded-2xl bg-slate-50 border border-slate-200 mb-3 overflow-hidden relative flex items-center justify-center p-2">
-                            <!-- Background pattern -->
-                            <div class="absolute inset-0 bg-gradient-to-b from-teal-50/50 to-slate-100"></div>
+                        <div class="h-64 sm:h-72 w-full rounded-2xl bg-slate-100/70 border border-slate-200/80 mb-3 overflow-hidden relative flex items-center justify-center p-3">
+                            <!-- Background subtle pattern -->
+                            <div class="absolute inset-0 bg-gradient-to-b from-teal-50/30 to-slate-100/60 pointer-events-none"></div>
 
-                            <!-- Sample Photos in Slots -->
+                            <!-- Inner Canvas Box matching EXACT aspect ratio of the template -->
                             <div
-                                v-for="slot in tmpl.slots"
-                                :key="slot.id"
-                                class="absolute rounded bg-teal-200/50 overflow-hidden"
+                                class="relative max-h-full max-w-full rounded-lg overflow-hidden shadow-md bg-white flex items-center justify-center"
                                 :style="{
-                                    left: `${(slot.x_position / tmpl.canvas_width) * 100}%`,
-                                    top: `${(slot.y_position / tmpl.canvas_height) * 100}%`,
-                                    width: `${(slot.width / tmpl.canvas_width) * 100}%`,
-                                    height: `${(slot.height / tmpl.canvas_height) * 100}%`,
+                                    aspectRatio: `${tmpl.canvas_width || 600} / ${tmpl.canvas_height || 1800}`,
+                                    height: (tmpl.canvas_height >= tmpl.canvas_width) ? '100%' : 'auto',
+                                    width: (tmpl.canvas_width > tmpl.canvas_height) ? '100%' : 'auto',
                                 }"
                             >
-                                <img
-                                    :src="`https://picsum.photos/seed/thumb${slot.id + tmpl.id * 7}/200/200`"
-                                    class="w-full h-full object-cover opacity-85"
-                                />
-                            </div>
+                                <!-- Sample Photos in Slots (strictly inside the canvas) -->
+                                <div
+                                    v-for="slot in tmpl.slots"
+                                    :key="slot.id"
+                                    class="absolute rounded-xs bg-slate-200 overflow-hidden"
+                                    :style="{
+                                        left: `${(slot.x_position / (tmpl.canvas_width || 600)) * 100}%`,
+                                        top: `${(slot.y_position / (tmpl.canvas_height || 1800)) * 100}%`,
+                                        width: `${(slot.width / (tmpl.canvas_width || 600)) * 100}%`,
+                                        height: `${(slot.height / (tmpl.canvas_height || 1800)) * 100}%`,
+                                    }"
+                                >
+                                    <img
+                                        :src="`https://picsum.photos/seed/thumb${slot.id + tmpl.id * 7}/300/300`"
+                                        class="w-full h-full object-cover"
+                                        loading="lazy"
+                                    />
+                                </div>
 
-                            <!-- Transparent PNG Frame Overlay -->
-                            <img
-                                v-if="tmpl.overlay_image_path"
-                                :src="formatOverlayUrl(tmpl.overlay_image_path)"
-                                @error="handleOverlayError"
-                                class="absolute inset-0 w-full h-full object-contain pointer-events-none z-1"
-                            />
-                            <div v-else class="relative z-1 text-center">
-                                <div class="text-teal-600 font-extrabold text-base mb-1">{{ tmpl.slots?.length || 3 }} Foto</div>
-                                <div class="text-[10px] text-slate-400 uppercase tracking-widest font-mono font-bold">{{ tmpl.orientation }}</div>
+                                <!-- Transparent PNG Frame Overlay (Exact match to canvas dimensions) -->
+                                <img
+                                    v-if="tmpl.overlay_image_path"
+                                    :src="formatOverlayUrl(tmpl.overlay_image_path)"
+                                    @error="handleOverlayError"
+                                    class="absolute inset-0 w-full h-full object-fill pointer-events-none z-10"
+                                />
+                                <div v-else class="absolute inset-0 flex flex-col items-center justify-center p-2 text-center z-10 bg-white/40 backdrop-blur-2xs">
+                                    <div class="text-teal-700 font-extrabold text-xs mb-0.5">{{ tmpl.slots?.length || 3 }} Foto</div>
+                                    <div class="text-[9px] text-slate-500 uppercase tracking-widest font-mono font-bold">{{ tmpl.orientation }}</div>
+                                </div>
                             </div>
                         </div>
 
@@ -850,7 +861,7 @@ onUnmounted(() => {
                         v-if="selectedTemplate?.overlay_image_path"
                         class="absolute bottom-4 right-4 z-10 w-16 h-22 rounded-xl bg-white/90 backdrop-blur-xs p-1 shadow-lg border border-teal-200 pointer-events-none hidden sm:flex items-center justify-center"
                     >
-                        <img :src="selectedTemplate.overlay_image_path" class="w-full h-full object-contain" />
+                        <img :src="formatOverlayUrl(selectedTemplate.overlay_image_path)" class="w-full h-full object-contain" />
                     </div>
 
                     <!-- Camera Error Notice -->

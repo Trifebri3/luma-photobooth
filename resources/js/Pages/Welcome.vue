@@ -43,7 +43,7 @@ defineProps({
                     <PwaInstallButton />
 
                     <Link
-                        :href="route('booth.show', demoSlug)"
+                        :href="route('booth.general')"
                         class="hidden sm:inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold rounded-xl bg-teal-50 hover:bg-teal-100 text-teal-700 border border-teal-200 transition-all hover:scale-105"
                     >
                         <Camera class="w-4 h-4 text-teal-600" />
@@ -107,8 +107,7 @@ defineProps({
 
                 <div class="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
                     <Link
-                        v-if="demoSlug"
-                        :href="route('booth.show', demoSlug)"
+                        :href="route('booth.general')"
                         class="w-full sm:w-auto inline-flex items-center justify-center gap-2.5 px-8 py-4 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-extrabold text-base shadow-xl shadow-teal-600/25 transition-all hover:scale-105"
                     >
                         <Camera class="w-5 h-5" />

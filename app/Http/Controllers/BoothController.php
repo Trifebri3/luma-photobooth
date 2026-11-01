@@ -24,6 +24,95 @@ class BoothController extends Controller
     ) {}
 
     /**
+     * Show General Universal Kiosk Photobooth Activation interface.
+     */
+    public function general(Request $request): Response
+    {
+        $lastPairedSlug = $request->session()->get('luma_last_paired_slug');
+        $lastPairedEvent = null;
+
+        if ($lastPairedSlug) {
+            $event = Event::where('slug', $lastPairedSlug)->where('status', '!=', 'archived')->first();
+            if ($event) {
+                $token = $request->cookie("luma_device_{$event->slug}")
+                    ?? $request->session()->get("luma_device_{$event->slug}");
+                $device = $token ? EventDevice::where('event_id', $event->id)->where('device_token', $token)->first() : null;
+                $lastPairedEvent = [
+                    'name' => $event->name,
+                    'slug' => $event->slug,
+                    'device_name' => $device?->device_name,
+                ];
+            }
+        }
+
+        return Inertia::render('Booth/General', [
+            'lastPairedEvent' => $lastPairedEvent,
+        ]);
+    }
+
+    /**
+     * Universal device pairing by activation code:
+     * Identifies the event from code, pairs the device, and returns redirect URL.
+     */
+    public function pairGeneral(Request $request): JsonResponse
+    {
+        $request->validate([
+            'activation_code' => ['required', 'string'],
+        ]);
+
+        $code = strtoupper(trim($request->input('activation_code')));
+
+        $device = EventDevice::with('event')->where('activation_code', $code)->first();
+
+        if (! $device) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Kode aktivasi tidak valid atau tidak ditemukan.',
+            ], 422);
+        }
+
+        $event = $device->event;
+
+        if (! $event) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Event terkait perangkat ini tidak ditemukan.',
+            ], 404);
+        }
+
+        if ($event->status === 'archived') {
+            return response()->json([
+                'success' => false,
+                'message' => "Event '{$event->name}' sudah diarsipkan dan tidak dapat digunakan.",
+            ], 422);
+        }
+
+        $token = Str::random(60);
+
+        $device->update([
+            'device_token' => $token,
+            'is_active' => true,
+            'ip_address' => $request->ip(),
+            'last_heartbeat_at' => now(),
+        ]);
+
+        $cookie = cookie("luma_device_{$event->slug}", $token, 60 * 24 * 30); // 30 days
+        $request->session()->put("luma_device_{$event->slug}", $token);
+        $request->session()->put("luma_last_paired_slug", $event->slug);
+
+        return response()->json([
+            'success' => true,
+            'message' => "Perangkat berhasil dihubungkan ke event '{$event->name}'!",
+            'event' => [
+                'name' => $event->name,
+                'slug' => $event->slug,
+                'device_name' => $device->device_name,
+            ],
+            'redirect_url' => url("/booth/{$event->slug}"),
+        ])->withCookie($cookie);
+    }
+
+    /**
      * Show Kiosk Photobooth interface.
      */
     public function show(Request $request, string $slug): Response

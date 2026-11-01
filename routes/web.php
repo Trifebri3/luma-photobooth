@@ -45,11 +45,16 @@ Route::prefix('admin')->name('admin.')->group(function () {
 });
 
 // 4. Public Self-Service Kiosk Photobooth
-Route::prefix('booth/{slug}')->name('booth.')->group(function () {
-    Route::get('/', [BoothController::class, 'show'])->name('show');
-    Route::post('/pair', [BoothController::class, 'pair'])->name('pair');
-    Route::post('/visitor', [BoothController::class, 'registerVisitor'])->name('visitor');
-    Route::post('/sessions/{session}/finish', [BoothController::class, 'finishSession'])->name('finish');
+Route::prefix('booth')->name('booth.')->group(function () {
+    Route::get('/', [BoothController::class, 'general'])->name('general');
+    Route::post('/pair', [BoothController::class, 'pairGeneral'])->name('pair.general');
+
+    Route::prefix('{slug}')->group(function () {
+        Route::get('/', [BoothController::class, 'show'])->name('show');
+        Route::post('/pair', [BoothController::class, 'pair'])->name('pair');
+        Route::post('/visitor', [BoothController::class, 'registerVisitor'])->name('visitor');
+        Route::post('/sessions/{session}/finish', [BoothController::class, 'finishSession'])->name('finish');
+    });
 });
 
 // 5. Public Private Anti-Bocor Photo Gallery
