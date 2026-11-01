@@ -614,7 +614,25 @@ function handleOverlayUpload(e) {
     const file = e.target.files[0];
     if (file) {
         newTemplateForm.overlay_image = file;
-        newOverlayPreviewUrl.value = URL.createObjectURL(file);
+        const objectUrl = URL.createObjectURL(file);
+        newOverlayPreviewUrl.value = objectUrl;
+
+        // Auto-detect PNG dimensions so frame never gets stretched/distorted
+        const img = new Image();
+        img.onload = () => {
+            if (img.naturalWidth && img.naturalHeight) {
+                newTemplateForm.canvas_width = img.naturalWidth;
+                newTemplateForm.canvas_height = img.naturalHeight;
+                if (img.naturalHeight >= img.naturalWidth * 2.2) {
+                    newTemplateForm.orientation = 'strip';
+                } else if (img.naturalHeight >= img.naturalWidth) {
+                    newTemplateForm.orientation = 'portrait';
+                } else {
+                    newTemplateForm.orientation = 'landscape';
+                }
+            }
+        };
+        img.src = objectUrl;
     }
 }
 

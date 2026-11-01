@@ -122,6 +122,40 @@ class BoothController extends Controller
             'frameTemplates' => fn ($query) => $query->where('is_active', true)->with('slots'),
         ])->where('slug', $slug)->firstOrFail();
 
+        // Auto-heal templates: sync real uploaded frame overlay image dimensions to template canvas
+        foreach ($event->frameTemplates as $template) {
+            if (!empty($template->overlay_image_path) && str_starts_with($template->overlay_image_path, '/frames/uploads/')) {
+                $filePath = public_path(ltrim($template->overlay_image_path, '/'));
+                if (file_exists($filePath)) {
+                    $size = @getimagesize($filePath);
+                    if ($size && $size[0] > 0 && $size[1] > 0) {
+                        $imgW = (int) $size[0];
+                        $imgH = (int) $size[1];
+                        if ($template->canvas_width !== $imgW || $template->canvas_height !== $imgH) {
+                            $oldW = (int) $template->canvas_width ?: $imgW;
+                            $oldH = (int) $template->canvas_height ?: $imgH;
+                            $scaleX = $imgW / $oldW;
+                            $scaleY = $imgH / $oldH;
+                            foreach ($template->slots as $slot) {
+                                $slot->update([
+                                    'x_position' => (int) round($slot->x_position * $scaleX),
+                                    'y_position' => (int) round($slot->y_position * $scaleY),
+                                    'width' => (int) round($slot->width * $scaleX),
+                                    'height' => (int) round($slot->height * $scaleY),
+                                ]);
+                            }
+                            $template->update([
+                                'canvas_width' => $imgW,
+                                'canvas_height' => $imgH,
+                                'orientation' => ($imgH >= $imgW * 2.2) ? 'strip' : (($imgH >= $imgW) ? 'portrait' : 'landscape'),
+                            ]);
+                            $template->refresh();
+                        }
+                    }
+                }
+            }
+        }
+
         // Check Device Pairing
         $deviceToken = $request->header('X-Device-Token') 
             ?? $request->cookie("luma_device_{$event->slug}")

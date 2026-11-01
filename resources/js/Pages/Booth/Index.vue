@@ -136,6 +136,32 @@ function handleOverlayError(e) {
     }
 }
 
+// Calculate responsive inner canvas style so it strictly preserves aspect ratio without stretching
+function getPreviewCanvasStyle(tmpl) {
+    const w = Number(tmpl.canvas_width) || 1200;
+    const h = Number(tmpl.canvas_height) || 1800;
+    const ratio = w / h;
+    const containerRatio = 3 / 4; // 0.75 for aspect-[3/4] card preview box
+
+    if (ratio <= containerRatio) {
+        // Taller/narrower than 3:4 (e.g. photostrips 1:3 or 2:3) -> fit height 100%, width scales naturally
+        return {
+            aspectRatio: `${w} / ${h}`,
+            height: '100%',
+            width: 'auto',
+            maxWidth: '100%',
+        };
+    } else {
+        // Wider than 3:4 (e.g. polaroid 1200x1500, square 1:1, or landscape) -> fit width 100%, height scales naturally
+        return {
+            aspectRatio: `${w} / ${h}`,
+            width: '100%',
+            height: 'auto',
+            maxHeight: '100%',
+        };
+    }
+}
+
 // Step Transitions: Visitor picks frame first, then takes photos!
 function startPhotobooth() {
     currentStep.value = 'select_frame';
@@ -379,11 +405,19 @@ async function compositeAndFinish() {
             drawCoverImage(ctx, img, slot.x_position, slot.y_position, slot.width, slot.height);
         }
 
-        // 3. Draw Template PNG Overlay if present
+        // 3. Draw Template PNG Overlay if present (Ensuring it never distorts/ketarik)
         if (template?.overlay_image_path) {
             try {
                 const overlayImg = await loadImage(template.overlay_image_path);
-                ctx.drawImage(overlayImg, 0, 0, canvasW, canvasH);
+                const overlayRatio = overlayImg.width / overlayImg.height;
+                const canvasRatio = canvasW / canvasH;
+
+                // If aspect ratio matches canvas within 3%, draw exact. Otherwise contain to prevent distortion!
+                if (Math.abs(overlayRatio - canvasRatio) < 0.03) {
+                    ctx.drawImage(overlayImg, 0, 0, canvasW, canvasH);
+                } else {
+                    drawContainImage(ctx, overlayImg, 0, 0, canvasW, canvasH);
+                }
             } catch (e) {
                 console.warn('Overlay failed to load, proceeding with clean canvas');
             }
@@ -477,6 +511,25 @@ function drawCoverImage(ctx, img, x, y, w, h) {
     }
 
     ctx.drawImage(img, sX, sY, sW, sH, x, y, w, h);
+}
+
+function drawContainImage(ctx, img, x, y, targetW, targetH) {
+    const imgRatio = img.width / img.height;
+    const targetRatio = targetW / targetH;
+    let dW = targetW;
+    let dH = targetH;
+    let dX = x;
+    let dY = y;
+
+    if (imgRatio > targetRatio) {
+        dH = targetW / imgRatio;
+        dY = y + (targetH - dH) / 2;
+    } else {
+        dW = targetH * imgRatio;
+        dX = x + (targetW - dW) / 2;
+    }
+
+    ctx.drawImage(img, 0, 0, img.width, img.height, dX, dY, dW, dH);
 }
 
 function triggerCelebration() {
@@ -748,18 +801,14 @@ onUnmounted(() => {
                         </div>
 
                         <!-- Frame Preview Card with Simulated Sample Photo behind transparent cutouts -->
-                        <div class="h-64 sm:h-72 w-full rounded-2xl bg-slate-100/70 border border-slate-200/80 mb-3 overflow-hidden relative flex items-center justify-center p-3">
+                        <div class="aspect-[3/4] w-full rounded-2xl bg-slate-100/70 border border-slate-200/80 mb-3 overflow-hidden relative flex items-center justify-center p-2.5">
                             <!-- Background subtle pattern -->
                             <div class="absolute inset-0 bg-gradient-to-b from-teal-50/30 to-slate-100/60 pointer-events-none"></div>
 
                             <!-- Inner Canvas Box matching EXACT aspect ratio of the template -->
                             <div
-                                class="relative max-h-full max-w-full rounded-lg overflow-hidden shadow-md bg-white flex items-center justify-center"
-                                :style="{
-                                    aspectRatio: `${tmpl.canvas_width || 600} / ${tmpl.canvas_height || 1800}`,
-                                    height: (tmpl.canvas_height >= tmpl.canvas_width) ? '100%' : 'auto',
-                                    width: (tmpl.canvas_width > tmpl.canvas_height) ? '100%' : 'auto',
-                                }"
+                                class="relative rounded-lg overflow-hidden shadow-sm bg-white flex items-center justify-center transition-transform group-hover:scale-105 duration-300"
+                                :style="getPreviewCanvasStyle(tmpl)"
                             >
                                 <!-- Sample Photos in Slots (strictly inside the canvas) -->
                                 <div
@@ -767,9 +816,9 @@ onUnmounted(() => {
                                     :key="slot.id"
                                     class="absolute rounded-xs bg-slate-200 overflow-hidden"
                                     :style="{
-                                        left: `${(slot.x_position / (tmpl.canvas_width || 600)) * 100}%`,
+                                        left: `${(slot.x_position / (tmpl.canvas_width || 1200)) * 100}%`,
                                         top: `${(slot.y_position / (tmpl.canvas_height || 1800)) * 100}%`,
-                                        width: `${(slot.width / (tmpl.canvas_width || 600)) * 100}%`,
+                                        width: `${(slot.width / (tmpl.canvas_width || 1200)) * 100}%`,
                                         height: `${(slot.height / (tmpl.canvas_height || 1800)) * 100}%`,
                                     }"
                                 >
@@ -780,12 +829,12 @@ onUnmounted(() => {
                                     />
                                 </div>
 
-                                <!-- Transparent PNG Frame Overlay (Exact match to canvas dimensions) -->
+                                <!-- Transparent PNG Frame Overlay (Exact match, never stretched) -->
                                 <img
                                     v-if="tmpl.overlay_image_path"
                                     :src="formatOverlayUrl(tmpl.overlay_image_path)"
                                     @error="handleOverlayError"
-                                    class="absolute inset-0 w-full h-full object-fill pointer-events-none z-10"
+                                    class="absolute inset-0 w-full h-full object-contain pointer-events-none z-10"
                                 />
                                 <div v-else class="absolute inset-0 flex flex-col items-center justify-center p-2 text-center z-10 bg-white/40 backdrop-blur-2xs">
                                     <div class="text-teal-700 font-extrabold text-xs mb-0.5">{{ tmpl.slots?.length || 3 }} Foto</div>

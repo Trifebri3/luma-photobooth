@@ -22,7 +22,7 @@ class FrameStudioController extends Controller
 
         $templates = $event->frameTemplates()->with('slots')->get();
 
-        // Auto-heal any template with missing or broken overlay paths
+        // Auto-heal any template with missing, broken overlay paths, or mismatched dimensions
         foreach ($templates as $t) {
             if (empty($t->overlay_image_path) || str_starts_with($t->overlay_image_path, 'public/') || str_starts_with($t->overlay_image_path, '/storage/public/')) {
                 $count = $t->slots->count();
@@ -36,6 +36,34 @@ class FrameStudioController extends Controller
                     $newPath = '/frames/y2k-grid-4.png';
                 }
                 $t->update(['overlay_image_path' => $newPath]);
+            } elseif (str_starts_with($t->overlay_image_path, '/frames/uploads/')) {
+                $filePath = public_path(ltrim($t->overlay_image_path, '/'));
+                if (file_exists($filePath)) {
+                    $size = @getimagesize($filePath);
+                    if ($size && $size[0] > 0 && $size[1] > 0) {
+                        $imgW = (int) $size[0];
+                        $imgH = (int) $size[1];
+                        if ($t->canvas_width !== $imgW || $t->canvas_height !== $imgH) {
+                            $oldW = (int) $t->canvas_width ?: $imgW;
+                            $oldH = (int) $t->canvas_height ?: $imgH;
+                            $scaleX = $imgW / $oldW;
+                            $scaleY = $imgH / $oldH;
+                            foreach ($t->slots as $s) {
+                                $s->update([
+                                    'x_position' => (int) round($s->x_position * $scaleX),
+                                    'y_position' => (int) round($s->y_position * $scaleY),
+                                    'width' => (int) round($s->width * $scaleX),
+                                    'height' => (int) round($s->height * $scaleY),
+                                ]);
+                            }
+                            $t->update([
+                                'canvas_width' => $imgW,
+                                'canvas_height' => $imgH,
+                                'orientation' => ($imgH >= $imgW * 2.2) ? 'strip' : (($imgH >= $imgW) ? 'portrait' : 'landscape'),
+                            ]);
+                        }
+                    }
+                }
             }
         }
 
@@ -71,6 +99,14 @@ class FrameStudioController extends Controller
             $filename = Str::uuid() . '.png';
             $file->move($uploadDir, $filename);
             $overlayPath = '/frames/uploads/' . $filename;
+
+            // Automatically detect true image resolution so frame is never stretched
+            $size = @getimagesize($uploadDir . '/' . $filename);
+            if ($size && $size[0] > 0 && $size[1] > 0) {
+                $validated['canvas_width'] = (int) $size[0];
+                $validated['canvas_height'] = (int) $size[1];
+                $validated['orientation'] = ($size[1] >= $size[0] * 2.2) ? 'strip' : (($size[1] >= $size[0]) ? 'portrait' : 'landscape');
+            }
         } elseif ($preset) {
             $presetFrames = [
                 'strip_3' => '/frames/kawaii-strip-3.png',
@@ -208,9 +244,38 @@ class FrameStudioController extends Controller
         $file->move($uploadDir, $filename);
         $overlayUrl = '/frames/uploads/' . $filename;
 
-        $template->update([
+        $updateData = [
             'overlay_image_path' => $overlayUrl,
-        ]);
+        ];
+
+        // Read real image resolution and adjust canvas & slots proportionally
+        $size = @getimagesize($uploadDir . '/' . $filename);
+        if ($size && $size[0] > 0 && $size[1] > 0) {
+            $newW = (int) $size[0];
+            $newH = (int) $size[1];
+            $oldW = (int) $template->canvas_width ?: $newW;
+            $oldH = (int) $template->canvas_height ?: $newH;
+
+            if ($oldW > 0 && $oldH > 0 && ($oldW !== $newW || $oldH !== $newH)) {
+                $scaleX = $newW / $oldW;
+                $scaleY = $newH / $oldH;
+
+                foreach ($template->slots as $slot) {
+                    $slot->update([
+                        'x_position' => (int) round($slot->x_position * $scaleX),
+                        'y_position' => (int) round($slot->y_position * $scaleY),
+                        'width' => (int) round($slot->width * $scaleX),
+                        'height' => (int) round($slot->height * $scaleY),
+                    ]);
+                }
+
+                $updateData['canvas_width'] = $newW;
+                $updateData['canvas_height'] = $newH;
+                $updateData['orientation'] = ($newH >= $newW * 2.2) ? 'strip' : (($newH >= $newW) ? 'portrait' : 'landscape');
+            }
+        }
+
+        $template->update($updateData);
 
         return back()->with('success', 'Frame PNG transparan berhasil diperbarui!');
     }
