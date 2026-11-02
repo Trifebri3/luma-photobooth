@@ -1,7 +1,7 @@
 <script setup>
 import { ref } from 'vue';
-import { Head } from '@inertiajs/vue3';
-import { Download, Share2, ShieldCheck, Calendar, MapPin, Sparkles, Check } from 'lucide-vue-next';
+import { Head, Link } from '@inertiajs/vue3';
+import { Download, Share2, ShieldCheck, Calendar, MapPin, Sparkles, Check, Layers, ExternalLink } from 'lucide-vue-next';
 
 const props = defineProps({
     token: String,
@@ -10,6 +10,10 @@ const props = defineProps({
     photo: Object,
     imageUrl: String,
     downloadUrl: String,
+    captures: {
+        type: Array,
+        default: () => [],
+    },
 });
 
 const isCopied = ref(false);
@@ -48,9 +52,21 @@ async function handleShare() {
                     </div>
                 </div>
 
-                <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs font-bold">
-                    <ShieldCheck class="w-3.5 h-3.5 text-teal-600" />
-                    <span>Anti-Bocor</span>
+                <div class="flex items-center gap-2">
+                    <a
+                        v-if="event.galleryUrl"
+                        :href="event.galleryUrl"
+                        class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold transition"
+                        title="Buka galeri lengkap acara ini"
+                    >
+                        <span>Galeri Event</span>
+                        <ExternalLink class="w-3 h-3 text-slate-500" />
+                    </a>
+
+                    <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 border border-teal-200 text-teal-700 text-xs font-bold">
+                        <ShieldCheck class="w-3.5 h-3.5 text-teal-600" />
+                        <span>Anti-Bocor</span>
+                    </div>
                 </div>
             </div>
         </header>
@@ -67,7 +83,7 @@ async function handleShare() {
                 <p class="text-xs text-slate-500 mt-1">Diambil pada {{ photo.created_at }}</p>
             </div>
 
-            <!-- Photo Card Container (White with clean shadow) -->
+            <!-- Main Framed Photo Container (White with clean shadow) -->
             <div class="w-full rounded-3xl overflow-hidden bg-white border border-slate-200 shadow-xl relative group p-2">
                 <img
                     :src="imageUrl"
@@ -77,14 +93,14 @@ async function handleShare() {
                 />
             </div>
 
-            <!-- Action Buttons -->
+            <!-- Action Buttons for Main Photo -->
             <div class="w-full mt-6 space-y-3">
                 <a
                     :href="downloadUrl"
                     class="w-full py-4 px-6 rounded-2xl bg-teal-600 hover:bg-teal-500 text-white font-extrabold text-base flex items-center justify-center gap-2.5 shadow-lg shadow-teal-600/30 transition-all hover:scale-[1.02] active:scale-[0.98]"
                 >
                     <Download class="w-5 h-5" />
-                    <span>Unduh Foto Resolusi Tinggi</span>
+                    <span>Unduh Foto Berbingkai HD</span>
                 </a>
 
                 <button
@@ -95,6 +111,55 @@ async function handleShare() {
                     <Check v-else class="w-4 h-4 text-emerald-600" />
                     <span>{{ isCopied ? 'Tautan Disalin ke Clipboard!' : 'Bagikan ke Teman / Media Sosial' }}</span>
                 </button>
+            </div>
+
+            <!-- Raw Captures Section (Foto Mentah) -->
+            <div v-if="captures && captures.length > 0" class="w-full mt-10 space-y-4">
+                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                    <div class="flex items-center gap-2">
+                        <Layers class="w-4 h-4 text-amber-600" />
+                        <h3 class="font-extrabold text-sm text-slate-900">Foto Mentah Kamera (Raw Poses)</h3>
+                    </div>
+                    <span class="text-xs font-bold text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200">
+                        {{ captures.length }} Pose
+                    </span>
+                </div>
+
+                <p class="text-xs text-slate-500">
+                    Jepretan asli dari kamera sebelum digabungkan ke dalam frame template:
+                </p>
+
+                <div class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                    <div
+                        v-for="cap in captures"
+                        :key="cap.id"
+                        class="group relative rounded-2xl bg-white border border-slate-200 shadow-xs overflow-hidden flex flex-col hover:border-teal-400 hover:shadow-md transition"
+                    >
+                        <div class="aspect-[4/3] bg-slate-100 overflow-hidden relative">
+                            <img
+                                :src="cap.imageUrl"
+                                :alt="`Pose #${cap.slot_number}`"
+                                class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                loading="lazy"
+                            />
+                            <span class="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-bold">
+                                Pose #{{ cap.slot_number }}
+                            </span>
+                        </div>
+
+                        <div class="p-2.5 bg-white border-t border-slate-100 flex items-center justify-between">
+                            <span class="text-[11px] font-bold text-slate-700">Foto Mentah</span>
+                            <a
+                                :href="cap.downloadUrl"
+                                class="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 hover:bg-teal-100 text-teal-700 text-xs font-bold transition"
+                                title="Download Foto Mentah Ini"
+                            >
+                                <Download class="w-3 h-3" />
+                                <span>Simpan</span>
+                            </a>
+                        </div>
+                    </div>
+                </div>
             </div>
 
             <!-- Event Details Card -->
@@ -116,6 +181,15 @@ async function handleShare() {
 
                 <div v-if="event.description" class="text-slate-500 pt-1 leading-relaxed">
                     {{ event.description }}
+                </div>
+
+                <div v-if="event.galleryUrl" class="pt-2 border-t border-slate-100">
+                    <a
+                        :href="event.galleryUrl"
+                        class="text-teal-700 hover:text-teal-800 font-extrabold flex items-center gap-1"
+                    >
+                        <span>Lihat Seluruh Galeri Foto Acara Ini &rarr;</span>
+                    </a>
                 </div>
             </div>
 

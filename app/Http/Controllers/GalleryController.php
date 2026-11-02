@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\PhotoAccessToken;
+use App\Models\PhotoCapture;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -19,6 +20,7 @@ class GalleryController extends Controller
     {
         $accessToken = PhotoAccessToken::with([
             'photo.session.event',
+            'photo.session.captures',
             'visitor',
         ])->where('token', $token)->firstOrFail();
 
@@ -33,6 +35,13 @@ class GalleryController extends Controller
         $event = $session->event;
         $visitor = $accessToken->visitor;
 
+        $captures = $session->captures->map(fn ($c) => [
+            'id' => $c->id,
+            'slot_number' => $c->slot_number,
+            'imageUrl' => url("/p/{$token}/capture/{$c->id}/image"),
+            'downloadUrl' => url("/p/{$token}/capture/{$c->id}/download"),
+        ]);
+
         return Inertia::render('Gallery/Show', [
             'token' => $token,
             'visitor' => [
@@ -44,6 +53,7 @@ class GalleryController extends Controller
                 'description' => $event->description,
                 'location' => $event->location,
                 'start_date' => $event->start_date?->format('d M Y'),
+                'galleryUrl' => url("/e/{$event->slug}"),
             ],
             'photo' => [
                 'created_at' => $photo->created_at->format('d M Y, H:i'),
@@ -51,7 +61,51 @@ class GalleryController extends Controller
             ],
             'imageUrl' => url("/p/{$token}/image"),
             'downloadUrl' => url("/p/{$token}/download"),
+            'captures' => $captures,
         ]);
+    }
+
+    /**
+     * Stream a raw capture photo for this visitor token.
+     */
+    public function captureImage(string $token, PhotoCapture $capture): BinaryFileResponse
+    {
+        $accessToken = PhotoAccessToken::with('photo.session')->where('token', $token)->firstOrFail();
+        if ($accessToken->isExpired() || $capture->visitor_session_id !== $accessToken->photo->visitor_session_id) {
+            abort(403, 'Akses foto mentah tidak diizinkan.');
+        }
+
+        $path = Storage::disk('local')->path($capture->file_path);
+        if (! file_exists($path)) {
+            abort(404, 'File foto mentah tidak ditemukan pada server.');
+        }
+
+        return response()->file($path, [
+            'Cache-Control' => 'private, max-age=86400',
+        ]);
+    }
+
+    /**
+     * Download a raw capture photo for this visitor token.
+     */
+    public function captureDownload(string $token, PhotoCapture $capture): BinaryFileResponse
+    {
+        $accessToken = PhotoAccessToken::with(['photo.session.event', 'visitor'])->where('token', $token)->firstOrFail();
+        if ($accessToken->isExpired() || $capture->visitor_session_id !== $accessToken->photo->visitor_session_id) {
+            abort(403, 'Akses foto mentah tidak diizinkan.');
+        }
+
+        $path = Storage::disk('local')->path($capture->file_path);
+        if (! file_exists($path)) {
+            abort(404, 'File foto mentah tidak ditemukan.');
+        }
+
+        $eventSlug = Str::slug($accessToken->photo->session->event->name ?? 'event');
+        $visitorName = Str::slug($accessToken->visitor->name ?? 'photo');
+        $ext = pathinfo($path, PATHINFO_EXTENSION) ?: 'jpg';
+        $downloadName = "{$eventSlug}_{$visitorName}_Mentah_Pose{$capture->slot_number}.{$ext}";
+
+        return response()->download($path, $downloadName);
     }
 
     /**

@@ -1,10 +1,11 @@
 <script setup>
-import { ref, watch } from 'vue';
+import { ref, computed, watch } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, router } from '@inertiajs/vue3';
 import {
     Camera, Search, Filter, Calendar, Download, ExternalLink, Trash2, Eye,
-    Check, Copy, ChevronLeft, ChevronRight, X, Sparkles, MessageSquare, Smartphone
+    Check, Copy, ChevronLeft, ChevronRight, X, Sparkles, MessageSquare, Smartphone,
+    Share2, Layers, ArrowDownToLine
 } from 'lucide-vue-next';
 
 const props = defineProps({
@@ -13,6 +14,9 @@ const props = defineProps({
     filters: Object,
     totalPhotosCount: Number,
 });
+
+const isZipMenuOpen = ref(false);
+const isCopied = ref(false);
 
 // Filters state
 const selectedEvent = ref(props.filters.event_id || '');
@@ -48,6 +52,19 @@ function resetFilters() {
     searchQuery.value = '';
     selectedDate.value = '';
     applyFilters();
+}
+
+const selectedEventObj = computed(() => {
+    if (!selectedEvent.value) return null;
+    return props.eventsList.find(e => e.id == selectedEvent.value) || null;
+});
+
+function copyEventGalleryUrl() {
+    if (!selectedEventObj.value) return;
+    const url = `${window.location.origin}/e/${selectedEventObj.value.slug}`;
+    navigator.clipboard.writeText(url);
+    isCopied.value = true;
+    setTimeout(() => { isCopied.value = false; }, 2000);
 }
 
 // Lightbox Modal state
@@ -148,15 +165,83 @@ function formatDate(dateStr) {
                     </p>
                 </div>
 
-                <div v-if="selectedEvent" class="flex items-center gap-2">
-                    <a
-                        :href="route('organizer.events.photos.zip', selectedEvent)"
-                        class="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold rounded-xl shadow-md shadow-teal-600/20 transition hover:scale-102"
-                        title="Unduh seluruh foto event ini dalam satu file .ZIP"
+                <div v-if="selectedEvent && selectedEventObj" class="flex items-center gap-2">
+                    <button
+                        @click="copyEventGalleryUrl"
+                        type="button"
+                        class="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-teal-700 text-xs font-bold rounded-xl border border-teal-200 shadow-2xs transition"
+                        title="Salin Link Galeri Bersama Event"
                     >
-                        <Download class="w-4 h-4" />
-                        <span>Download ZIP Event Ini</span>
+                        <Check v-if="isCopied" class="w-3.5 h-3.5 text-teal-600" />
+                        <Share2 v-else class="w-3.5 h-3.5 text-teal-600" />
+                        <span>{{ isCopied ? 'Link Tersalin!' : 'Bagikan Galeri' }}</span>
+                    </button>
+
+                    <a
+                        :href="`/e/${selectedEventObj.slug}`"
+                        target="_blank"
+                        class="inline-flex items-center gap-1.5 px-3 py-2 bg-white hover:bg-slate-50 text-slate-700 text-xs font-bold rounded-xl border border-slate-200 shadow-2xs transition"
+                        title="Buka Galeri Publik Event Ini"
+                    >
+                        <span>Galeri Publik</span>
+                        <ExternalLink class="w-3.5 h-3.5" />
                     </a>
+
+                    <!-- Download ZIP Dropdown -->
+                    <div class="relative">
+                        <button
+                            @click="isZipMenuOpen = !isZipMenuOpen"
+                            type="button"
+                            class="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-extrabold rounded-xl shadow-md shadow-teal-600/20 transition hover:scale-102"
+                        >
+                            <Download class="w-4 h-4" />
+                            <span>Download ZIP Event</span>
+                        </button>
+
+                        <div
+                            v-if="isZipMenuOpen"
+                            @click="isZipMenuOpen = false"
+                            class="fixed inset-0 z-20"
+                        ></div>
+
+                        <div
+                            v-if="isZipMenuOpen"
+                            class="absolute right-0 mt-2 w-64 rounded-2xl bg-white border border-slate-200 shadow-xl z-30 p-2 space-y-1 text-left"
+                        >
+                            <a
+                                :href="route('organizer.events.photos.zip', [selectedEvent, { type: 'all' }])"
+                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-teal-50 text-slate-700 hover:text-teal-900 text-xs font-bold transition"
+                            >
+                                <ArrowDownToLine class="w-4 h-4 text-teal-600 shrink-0" />
+                                <div>
+                                    <div>Semua Foto (.ZIP)</div>
+                                    <div class="text-[10px] text-slate-400 font-normal">Foto Booth + Foto Mentah</div>
+                                </div>
+                            </a>
+
+                            <a
+                                :href="route('organizer.events.photos.zip', [selectedEvent, { type: 'booth' }])"
+                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-teal-50 text-slate-700 hover:text-teal-900 text-xs font-bold transition"
+                            >
+                                <Camera class="w-4 h-4 text-teal-600 shrink-0" />
+                                <div>
+                                    <div>Hanya Foto Booth (.ZIP)</div>
+                                    <div class="text-[10px] text-slate-400 font-normal">Foto berbingkai selesai</div>
+                                </div>
+                            </a>
+
+                            <a
+                                :href="route('organizer.events.photos.zip', [selectedEvent, { type: 'raw' }])"
+                                class="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-amber-50 text-slate-700 hover:text-amber-900 text-xs font-bold transition"
+                            >
+                                <Layers class="w-4 h-4 text-amber-600 shrink-0" />
+                                <div>
+                                    <div>Hanya Foto Mentah (.ZIP)</div>
+                                    <div class="text-[10px] text-slate-400 font-normal">Semua pose jepretan kamera</div>
+                                </div>
+                            </a>
+                        </div>
+                    </div>
                 </div>
             </div>
         </template>

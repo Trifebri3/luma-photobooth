@@ -1,21 +1,27 @@
 <script setup>
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import AuthenticatedLayout from '@/Layouts/AuthenticatedLayout.vue';
 import { Head, Link, useForm, router } from '@inertiajs/vue3';
+import QRCode from 'qrcode';
 import {
     Calendar, Users, Camera, Smartphone, LayoutGrid, Settings, Plus, ExternalLink,
     Copy, Check, ShieldCheck, MessageSquare, ArrowLeft, Trash2, Key, Download, Eye,
-    X, ChevronLeft, ChevronRight, Sparkles
+    X, ChevronLeft, ChevronRight, Sparkles, Share2, Layers, ArrowDownToLine, QrCode
 } from 'lucide-vue-next';
 
 const props = defineProps({
     event: Object,
     photosCount: Number,
+    rawCount: Number,
+    publicGalleryUrl: String,
     boothUrl: String,
 });
 
 const activeTab = ref('photos'); // 'photos', 'devices', 'frames', 'visitors', 'settings'
+const photoFilterType = ref('all'); // 'all', 'booth', 'raw'
 const isCopied = ref(false);
+const isGalleryCopied = ref(false);
+const isZipMenuOpen = ref(false);
 
 function copyBoothUrl() {
     navigator.clipboard.writeText(props.boothUrl);
@@ -23,17 +29,86 @@ function copyBoothUrl() {
     setTimeout(() => { isCopied.value = false; }, 2000);
 }
 
+// Share Modal State
+const isShareModalOpen = ref(false);
+const qrCodeDataUrl = ref('');
+
+async function openShareModal() {
+    isShareModalOpen.value = true;
+    try {
+        qrCodeDataUrl.value = await QRCode.toDataURL(props.publicGalleryUrl, {
+            width: 320,
+            margin: 2,
+            color: {
+                dark: '#0f172a',
+                light: '#ffffff',
+            },
+        });
+    } catch (e) {
+        console.error('Failed to generate QR code:', e);
+    }
+}
+
+async function copyPublicGalleryUrl() {
+    try {
+        await navigator.clipboard.writeText(props.publicGalleryUrl);
+        isGalleryCopied.value = true;
+        setTimeout(() => { isGalleryCopied.value = false; }, 2000);
+    } catch (e) {}
+}
+
+const whatsappShareUrl = computed(() => {
+    const text = `Halo! Yuk lihat dan download seluruh foto seru di *${props.event.name}* (Foto Booth & Foto Mentah): ${props.publicGalleryUrl}`;
+    return `https://api.whatsapp.com/send?text=${encodeURIComponent(text)}`;
+});
+
+// Build list of all photos (both booth and raw) for display & lightbox
+const allGalleryItems = computed(() => {
+    const list = [];
+    (props.event.sessions || []).forEach(session => {
+        // Booth photo
+        if (session.photo && (photoFilterType.value === 'all' || photoFilterType.value === 'booth')) {
+            list.push({
+                type: 'booth',
+                id: session.photo.id,
+                session_id: session.id,
+                session_number: session.session_number,
+                visitor_name: session.visitor?.name,
+                created_at: session.created_at,
+                file_size_bytes: session.photo.file_size_bytes,
+                token: session.photo.accessTokens?.[0]?.token,
+                previewUrl: route('organizer.photos.image', session.photo.id),
+                downloadUrl: route('organizer.photos.download', session.photo.id),
+            });
+        }
+        // Raw captures
+        if (session.captures && (photoFilterType.value === 'all' || photoFilterType.value === 'raw')) {
+            session.captures.forEach(c => {
+                list.push({
+                    type: 'raw',
+                    id: c.id,
+                    slot_number: c.slot_number,
+                    session_id: session.id,
+                    session_number: session.session_number,
+                    visitor_name: session.visitor?.name,
+                    created_at: c.created_at || session.created_at,
+                    file_size_bytes: 0,
+                    previewUrl: route('organizer.captures.image', c.id),
+                    downloadUrl: route('organizer.captures.download', c.id),
+                });
+            });
+        }
+    });
+    return list;
+});
+
 // Lightbox modal for photo preview
 const isLightboxOpen = ref(false);
-const activeSessionIndex = ref(0);
+const activeItemIndex = ref(0);
 const copiedTokenId = ref(null);
 
-const availableSessionsWithPhotos = () => {
-    return (props.event.sessions || []).filter(s => s.photo);
-};
-
 function openLightbox(index) {
-    activeSessionIndex.value = index;
+    activeItemIndex.value = index;
     isLightboxOpen.value = true;
     document.body.style.overflow = 'hidden';
 }
@@ -44,15 +119,14 @@ function closeLightbox() {
 }
 
 function prevPhoto() {
-    if (activeSessionIndex.value > 0) {
-        activeSessionIndex.value--;
+    if (activeItemIndex.value > 0) {
+        activeItemIndex.value--;
     }
 }
 
 function nextPhoto() {
-    const list = availableSessionsWithPhotos();
-    if (activeSessionIndex.value < list.length - 1) {
-        activeSessionIndex.value++;
+    if (activeItemIndex.value < allGalleryItems.value.length - 1) {
+        activeItemIndex.value++;
     }
 }
 
@@ -252,28 +326,159 @@ function formatDate(dateStr) {
 
                 <!-- TAB 1: GALERI FOTO EVENT -->
                 <div v-if="activeTab === 'photos'" class="space-y-6">
-                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 rounded-3xl bg-white border border-slate-200 shadow-sm">
-                        <div>
-                            <div class="flex items-center gap-2">
-                                <h3 class="font-extrabold text-base text-slate-900">Foto Pengunjung Event Ini</h3>
-                                <span class="px-2 py-0.5 rounded-full text-xs font-bold bg-teal-50 text-teal-700 border border-teal-200">
-                                    {{ photosCount ?? event.sessions?.length ?? 0 }} Foto
-                                </span>
+
+                    <!-- Share Event Gallery Hero Card -->
+                    <div class="p-6 rounded-3xl bg-gradient-to-r from-teal-800 to-teal-700 text-white shadow-lg relative overflow-hidden">
+                        <div class="absolute -right-8 -top-8 w-40 h-40 rounded-full bg-white/5 blur-xl pointer-events-none"></div>
+
+                        <div class="relative z-10 flex flex-col md:flex-row md:items-center md:justify-between gap-5">
+                            <div class="space-y-1.5 max-w-xl">
+                                <div class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 backdrop-blur-xs text-teal-200 text-xs font-bold border border-white/15">
+                                    <Sparkles class="w-3.5 h-3.5 text-teal-300" />
+                                    <span>Fitur Berbagi Galeri Event</span>
+                                </div>
+                                <h3 class="text-xl font-extrabold tracking-tight">
+                                    Bagikan Semua Foto Booth & Foto Mentah
+                                </h3>
+                                <p class="text-xs text-teal-100/90 leading-relaxed">
+                                    Klien atau pengunjung event dapat melihat, menikmati, dan mengunduh seluruh jepretan booth serta file mentah (raw poses) melalui satu tautan galeri bersama.
+                                </p>
                             </div>
-                            <p class="text-xs text-slate-500 mt-0.5">
-                                Seluruh foto hasil komposit frame yang telah diambil pengunjung di booth
-                            </p>
+
+                            <div class="flex flex-wrap items-center gap-2.5 shrink-0">
+                                <button
+                                    @click="openShareModal"
+                                    type="button"
+                                    class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white text-teal-800 font-extrabold text-xs shadow-md transition hover:bg-teal-50"
+                                >
+                                    <Share2 class="w-4 h-4 text-teal-600" />
+                                    <span>Bagikan Galeri</span>
+                                </button>
+
+                                <a
+                                    :href="publicGalleryUrl"
+                                    target="_blank"
+                                    class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-teal-900/60 hover:bg-teal-900/80 text-white font-extrabold text-xs border border-white/20 transition"
+                                >
+                                    <span>Buka Galeri Publik</span>
+                                    <ExternalLink class="w-3.5 h-3.5" />
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Gallery Toolbar (Tabs & Download Options) -->
+                    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 p-5 rounded-3xl bg-white border border-slate-200 shadow-sm">
+                        <!-- Sub Filter Tabs -->
+                        <div class="flex items-center gap-2">
+                            <button
+                                @click="photoFilterType = 'all'"
+                                type="button"
+                                :class="[
+                                    'px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5',
+                                    photoFilterType === 'all'
+                                        ? 'bg-teal-600 text-white shadow-sm'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                ]"
+                            >
+                                <span>Semua Foto</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="photoFilterType === 'all' ? 'bg-teal-700 text-white' : 'bg-slate-200 text-slate-700'">
+                                    {{ (photosCount || 0) + (rawCount || 0) }}
+                                </span>
+                            </button>
+
+                            <button
+                                @click="photoFilterType = 'booth'"
+                                type="button"
+                                :class="[
+                                    'px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5',
+                                    photoFilterType === 'booth'
+                                        ? 'bg-teal-600 text-white shadow-sm'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                ]"
+                            >
+                                <Camera class="w-3.5 h-3.5" />
+                                <span>Foto Booth</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="photoFilterType === 'booth' ? 'bg-teal-700 text-white' : 'bg-slate-200 text-slate-700'">
+                                    {{ photosCount || 0 }}
+                                </span>
+                            </button>
+
+                            <button
+                                @click="photoFilterType = 'raw'"
+                                type="button"
+                                :class="[
+                                    'px-3.5 py-2 rounded-xl text-xs font-extrabold transition-all flex items-center gap-1.5',
+                                    photoFilterType === 'raw'
+                                        ? 'bg-teal-600 text-white shadow-sm'
+                                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                                ]"
+                            >
+                                <Layers class="w-3.5 h-3.5" />
+                                <span>Foto Mentah</span>
+                                <span class="px-1.5 py-0.2 rounded-full text-[10px]" :class="photoFilterType === 'raw' ? 'bg-teal-700 text-white' : 'bg-slate-200 text-slate-700'">
+                                    {{ rawCount || 0 }}
+                                </span>
+                            </button>
                         </div>
 
+                        <!-- Actions -->
                         <div class="flex items-center gap-2.5">
-                            <a
-                                :href="route('organizer.events.photos.zip', event.id)"
-                                class="inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-teal-700 text-xs font-bold rounded-xl border border-teal-200 shadow-2xs transition hover:border-teal-400"
-                                title="Download semua foto event ini dalam satu file ZIP"
-                            >
-                                <Download class="w-4 h-4 text-teal-600" />
-                                <span>Download ZIP Event</span>
-                            </a>
+                            <!-- Download ZIP Dropdown -->
+                            <div class="relative">
+                                <button
+                                    @click="isZipMenuOpen = !isZipMenuOpen"
+                                    type="button"
+                                    class="inline-flex items-center gap-2 px-3.5 py-2 bg-white hover:bg-slate-50 text-teal-700 text-xs font-bold rounded-xl border border-teal-200 shadow-2xs transition hover:border-teal-400"
+                                >
+                                    <Download class="w-4 h-4 text-teal-600" />
+                                    <span>Download ZIP</span>
+                                </button>
+
+                                <div
+                                    v-if="isZipMenuOpen"
+                                    @click="isZipMenuOpen = false"
+                                    class="fixed inset-0 z-20"
+                                ></div>
+
+                                <div
+                                    v-if="isZipMenuOpen"
+                                    class="absolute right-0 mt-2 w-64 rounded-2xl bg-white border border-slate-200 shadow-xl z-30 p-2 space-y-1 text-left"
+                                >
+                                    <a
+                                        :href="route('organizer.events.photos.zip', [event.id, { type: 'all' }])"
+                                        class="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-teal-50 text-slate-700 hover:text-teal-900 text-xs font-bold transition"
+                                    >
+                                        <ArrowDownToLine class="w-4 h-4 text-teal-600 shrink-0" />
+                                        <div>
+                                            <div>Semua Foto (.ZIP)</div>
+                                            <div class="text-[10px] text-slate-400 font-normal">Booth + Mentah dlm Folder</div>
+                                        </div>
+                                    </a>
+
+                                    <a
+                                        :href="route('organizer.events.photos.zip', [event.id, { type: 'booth' }])"
+                                        class="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-teal-50 text-slate-700 hover:text-teal-900 text-xs font-bold transition"
+                                    >
+                                        <Camera class="w-4 h-4 text-teal-600 shrink-0" />
+                                        <div>
+                                            <div>Hanya Foto Booth (.ZIP)</div>
+                                            <div class="text-[10px] text-slate-400 font-normal">{{ photosCount || 0 }} foto berbingkai</div>
+                                        </div>
+                                    </a>
+
+                                    <a
+                                        :href="route('organizer.events.photos.zip', [event.id, { type: 'raw' }])"
+                                        class="flex items-center gap-2.5 px-3 py-2 rounded-xl hover:bg-amber-50 text-slate-700 hover:text-amber-900 text-xs font-bold transition"
+                                    >
+                                        <Layers class="w-4 h-4 text-amber-600 shrink-0" />
+                                        <div>
+                                            <div>Hanya Foto Mentah (.ZIP)</div>
+                                            <div class="text-[10px] text-slate-400 font-normal">{{ rawCount || 0 }} pose jepretan</div>
+                                        </div>
+                                    </a>
+                                </div>
+                            </div>
 
                             <Link
                                 :href="route('organizer.photos.index', { event_id: event.id })"
@@ -286,15 +491,15 @@ function formatDate(dateStr) {
                     </div>
 
                     <!-- Photo Grid -->
-                    <div v-if="availableSessionsWithPhotos().length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
+                    <div v-if="allGalleryItems.length > 0" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
                         <div
-                            v-for="(session, sIdx) in availableSessionsWithPhotos()"
-                            :key="session.id"
+                            v-for="(item, itemIdx) in allGalleryItems"
+                            :key="`${item.type}-${item.id}`"
                             class="group relative rounded-2xl bg-white border border-slate-200 shadow-xs hover:shadow-xl hover:border-teal-400 transition-all duration-200 overflow-hidden flex flex-col"
                         >
-                            <!-- Thumbnail -->
+                            <!-- Thumbnail Box -->
                             <div
-                                @click="openLightbox(sIdx)"
+                                @click="openLightbox(itemIdx)"
                                 class="relative aspect-[3/4] bg-slate-100 cursor-pointer overflow-hidden flex items-center justify-center"
                                 :style="{
                                     backgroundImage: `radial-gradient(#CBD5E1 0.75px, transparent 0.75px), radial-gradient(#CBD5E1 0.75px, #F8FAFC 0.75px)`,
@@ -303,10 +508,11 @@ function formatDate(dateStr) {
                                 }"
                             >
                                 <img
-                                    :src="route('organizer.photos.image', session.photo.id)"
-                                    :alt="session.visitor?.name || 'Photo'"
+                                    :src="item.previewUrl"
+                                    :alt="item.visitor_name || 'Photo'"
                                     loading="lazy"
-                                    class="w-full h-full object-contain p-1.5 transition-transform duration-300 group-hover:scale-103"
+                                    class="w-full h-full p-1.5 transition-transform duration-300 group-hover:scale-103"
+                                    :class="item.type === 'booth' ? 'object-contain' : 'object-cover rounded-xl'"
                                 />
 
                                 <div class="absolute inset-0 bg-slate-900/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
@@ -315,30 +521,49 @@ function formatDate(dateStr) {
                                     </span>
                                 </div>
 
-                                <span class="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-mono font-bold shadow-xs">
-                                    #{{ session.session_number }}
+                                <!-- Badge Top Left -->
+                                <span
+                                    v-if="item.type === 'booth'"
+                                    class="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-teal-600 text-white text-[9px] font-extrabold uppercase tracking-wider shadow-xs backdrop-blur-xs flex items-center gap-1"
+                                >
+                                    <Camera class="w-2.5 h-2.5" />
+                                    <span>Booth</span>
+                                </span>
+                                <span
+                                    v-else
+                                    class="absolute top-2 left-2 px-2 py-0.5 rounded-md bg-amber-500 text-white text-[9px] font-extrabold uppercase tracking-wider shadow-xs backdrop-blur-xs flex items-center gap-1"
+                                >
+                                    <Layers class="w-2.5 h-2.5" />
+                                    <span>Mentah #{{ item.slot_number }}</span>
+                                </span>
+
+                                <span class="absolute top-2 right-2 px-1.5 py-0.5 rounded-md bg-slate-900/70 text-white text-[9px] font-mono font-bold shadow-xs backdrop-blur-xs">
+                                    #{{ item.session_number }}
                                 </span>
                             </div>
 
                             <!-- Footer -->
                             <div class="p-3 flex-1 flex flex-col justify-between border-t border-slate-100 text-xs">
                                 <div>
-                                    <div class="font-extrabold text-slate-900 truncate" :title="session.visitor?.name">
-                                        {{ session.visitor?.name || 'Pengunjung Anonim' }}
+                                    <div class="font-extrabold text-slate-900 truncate" :title="item.visitor_name">
+                                        {{ item.visitor_name || 'Pengunjung Anonim' }}
                                     </div>
                                     <div class="text-[10px] text-slate-400 font-mono mt-0.5">
-                                        {{ formatDate(session.created_at) }}
+                                        {{ formatDate(item.created_at) }}
                                     </div>
                                 </div>
 
                                 <div class="mt-2 pt-2 border-t border-slate-100 flex items-center justify-between">
-                                    <span class="text-[10px] text-slate-400 font-mono">
-                                        {{ formatBytes(session.photo.file_size_bytes) }}
+                                    <span v-if="item.type === 'booth' && item.file_size_bytes" class="text-[10px] text-slate-400 font-mono">
+                                        {{ formatBytes(item.file_size_bytes) }}
+                                    </span>
+                                    <span v-else class="text-[10px] text-amber-600 font-bold uppercase tracking-wider">
+                                        Pose {{ item.slot_number }}
                                     </span>
 
                                     <div class="flex items-center gap-1">
                                         <a
-                                            :href="route('organizer.photos.download', session.photo.id)"
+                                            :href="item.downloadUrl"
                                             class="p-1 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition"
                                             title="Download Foto Asli"
                                         >
@@ -346,13 +571,13 @@ function formatDate(dateStr) {
                                         </a>
 
                                         <button
-                                            v-if="session.photo.accessTokens?.[0]?.token"
-                                            @click="copyPrivateLink(session.photo.accessTokens[0].token)"
+                                            v-if="item.token"
+                                            @click="copyPrivateLink(item.token)"
                                             type="button"
                                             class="p-1 rounded-lg text-slate-400 hover:text-teal-600 hover:bg-teal-50 transition"
                                             title="Salin Link Galeri Pengunjung"
                                         >
-                                            <Check v-if="copiedTokenId === session.photo.accessTokens[0].token" class="w-3.5 h-3.5 text-teal-600" />
+                                            <Check v-if="copiedTokenId === item.token" class="w-3.5 h-3.5 text-teal-600" />
                                             <Copy v-else class="w-3.5 h-3.5" />
                                         </button>
                                     </div>
@@ -598,9 +823,9 @@ function formatDate(dateStr) {
             </div>
         </div>
 
-        <!-- Lightbox Modal in Show Event -->
+        <!-- Lightbox Modal in Show Event (Supports Booth & Raw Photos) -->
         <div
-            v-if="isLightboxOpen && availableSessionsWithPhotos()[activeSessionIndex]"
+            v-if="isLightboxOpen && allGalleryItems[activeItemIndex]"
             class="fixed inset-0 z-50 bg-slate-950/85 backdrop-blur-md flex items-center justify-center p-4 sm:p-6"
             @click.self="closeLightbox"
         >
@@ -612,7 +837,7 @@ function formatDate(dateStr) {
             </button>
 
             <button
-                v-if="activeSessionIndex > 0"
+                v-if="activeItemIndex > 0"
                 @click="prevPhoto"
                 class="absolute left-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition z-50"
             >
@@ -620,7 +845,7 @@ function formatDate(dateStr) {
             </button>
 
             <button
-                v-if="activeSessionIndex < availableSessionsWithPhotos().length - 1"
+                v-if="activeItemIndex < allGalleryItems.length - 1"
                 @click="nextPhoto"
                 class="absolute right-4 top-1/2 -translate-y-1/2 p-3 rounded-full bg-white/10 hover:bg-white/20 text-white transition z-50"
             >
@@ -637,7 +862,7 @@ function formatDate(dateStr) {
                     }"
                 >
                     <img
-                        :src="route('organizer.photos.image', availableSessionsWithPhotos()[activeSessionIndex].photo.id)"
+                        :src="allGalleryItems[activeItemIndex].previewUrl"
                         class="max-h-[80vh] w-auto max-w-full object-contain rounded-lg shadow-2xl"
                     />
                 </div>
@@ -645,34 +870,45 @@ function formatDate(dateStr) {
                 <div class="w-full md:w-80 bg-white p-6 flex flex-col justify-between border-t md:border-t-0 md:border-l border-slate-200 text-xs">
                     <div class="space-y-4">
                         <div>
-                            <span class="text-[10px] font-bold tracking-wider uppercase text-teal-700 bg-teal-50 px-2 py-0.5 rounded-full border border-teal-200">
-                                Sesi #{{ availableSessionsWithPhotos()[activeSessionIndex].session_number }}
+                            <span
+                                v-if="allGalleryItems[activeItemIndex].type === 'booth'"
+                                class="text-[10px] font-bold tracking-wider uppercase text-teal-700 bg-teal-50 px-2.5 py-0.5 rounded-full border border-teal-200"
+                            >
+                                Foto Booth • Sesi #{{ allGalleryItems[activeItemIndex].session_number }}
                             </span>
-                            <h3 class="text-lg font-black text-slate-900 mt-1">
-                                {{ availableSessionsWithPhotos()[activeSessionIndex].visitor?.name || 'Pengunjung Anonim' }}
+                            <span
+                                v-else
+                                class="text-[10px] font-bold tracking-wider uppercase text-amber-700 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200"
+                            >
+                                Foto Mentah • Pose #{{ allGalleryItems[activeItemIndex].slot_number }}
+                            </span>
+
+                            <h3 class="text-lg font-black text-slate-900 mt-1.5">
+                                {{ allGalleryItems[activeItemIndex].visitor_name || 'Pengunjung Anonim' }}
                             </h3>
                             <div class="text-[11px] text-slate-400 font-mono">
-                                {{ formatDate(availableSessionsWithPhotos()[activeSessionIndex].created_at) }}
+                                {{ formatDate(allGalleryItems[activeItemIndex].created_at) }}
                             </div>
                         </div>
 
                         <div class="space-y-2 pt-2 border-t border-slate-100">
                             <div class="flex justify-between">
-                                <span class="text-slate-400">WhatsApp:</span>
-                                <span class="font-mono font-bold text-slate-800">
-                                    {{ availableSessionsWithPhotos()[activeSessionIndex].visitor?.phone_number || '-' }}
+                                <span class="text-slate-400">Tipe Foto:</span>
+                                <span class="font-bold text-slate-800">
+                                    {{ allGalleryItems[activeItemIndex].type === 'booth' ? 'Komposit Frame' : `Mentah (Pose ${allGalleryItems[activeItemIndex].slot_number})` }}
                                 </span>
                             </div>
-                            <div class="flex justify-between">
+                            <div v-if="allGalleryItems[activeItemIndex].file_size_bytes" class="flex justify-between">
                                 <span class="text-slate-400">Ukuran:</span>
                                 <span class="font-mono text-slate-800">
-                                    {{ formatBytes(availableSessionsWithPhotos()[activeSessionIndex].photo.file_size_bytes) }}
+                                    {{ formatBytes(allGalleryItems[activeItemIndex].file_size_bytes) }}
                                 </span>
                             </div>
                         </div>
 
+                        <!-- Private Link if Booth photo -->
                         <div
-                            v-if="availableSessionsWithPhotos()[activeSessionIndex].photo.accessTokens?.[0]?.token"
+                            v-if="allGalleryItems[activeItemIndex].token"
                             class="p-3 rounded-2xl bg-teal-50 border border-teal-200 space-y-1.5"
                         >
                             <span class="text-[11px] font-bold text-teal-900 flex items-center gap-1">
@@ -682,15 +918,15 @@ function formatDate(dateStr) {
                             <div class="flex items-center gap-1.5 pt-1">
                                 <button
                                     type="button"
-                                    @click="copyPrivateLink(availableSessionsWithPhotos()[activeSessionIndex].photo.accessTokens[0].token)"
+                                    @click="copyPrivateLink(allGalleryItems[activeItemIndex].token)"
                                     class="flex-1 py-1 px-2 rounded-lg bg-white border border-teal-300 text-teal-800 text-[11px] font-bold flex items-center justify-center gap-1"
                                 >
-                                    <Check v-if="copiedTokenId === availableSessionsWithPhotos()[activeSessionIndex].photo.accessTokens[0].token" class="w-3 h-3 text-teal-600" />
+                                    <Check v-if="copiedTokenId === allGalleryItems[activeItemIndex].token" class="w-3 h-3 text-teal-600" />
                                     <Copy v-else class="w-3 h-3" />
-                                    <span>{{ copiedTokenId === availableSessionsWithPhotos()[activeSessionIndex].photo.accessTokens[0].token ? 'Tersalin' : 'Salin Link' }}</span>
+                                    <span>{{ copiedTokenId === allGalleryItems[activeItemIndex].token ? 'Tersalin' : 'Salin Link' }}</span>
                                 </button>
                                 <a
-                                    :href="`/p/${availableSessionsWithPhotos()[activeSessionIndex].photo.accessTokens[0].token}`"
+                                    :href="`/p/${allGalleryItems[activeItemIndex].token}`"
                                     target="_blank"
                                     class="p-1 rounded-lg bg-white border border-teal-300 text-teal-700"
                                 >
@@ -702,7 +938,7 @@ function formatDate(dateStr) {
 
                     <div class="pt-4 border-t border-slate-100 space-y-2">
                         <a
-                            :href="route('organizer.photos.download', availableSessionsWithPhotos()[activeSessionIndex].photo.id)"
+                            :href="allGalleryItems[activeItemIndex].downloadUrl"
                             class="w-full py-2.5 px-4 rounded-xl bg-teal-600 hover:bg-teal-500 text-white font-extrabold text-xs shadow-md shadow-teal-600/20 transition flex items-center justify-center gap-2"
                         >
                             <Download class="w-4 h-4" />
@@ -710,14 +946,79 @@ function formatDate(dateStr) {
                         </a>
 
                         <button
+                            v-if="allGalleryItems[activeItemIndex].type === 'booth'"
                             type="button"
-                            @click="deletePhoto(availableSessionsWithPhotos()[activeSessionIndex].photo.id)"
+                            @click="deletePhoto(allGalleryItems[activeItemIndex].id)"
                             class="w-full py-1.5 text-rose-600 hover:bg-rose-50 rounded-xl font-bold transition flex items-center justify-center gap-1"
                         >
                             <Trash2 class="w-3.5 h-3.5" />
                             <span>Hapus Foto</span>
                         </button>
                     </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Share Event Gallery Modal with QR Code -->
+        <div
+            v-if="isShareModalOpen"
+            class="fixed inset-0 z-50 bg-slate-950/60 backdrop-blur-xs flex items-center justify-center p-4"
+            @click.self="isShareModalOpen = false"
+        >
+            <div class="w-full max-w-md rounded-3xl bg-white p-6 sm:p-8 shadow-2xl border border-slate-200 text-center space-y-5">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-100">
+                    <div class="flex items-center gap-2">
+                        <Share2 class="w-4 h-4 text-teal-600" />
+                        <h3 class="font-extrabold text-base text-slate-900">Bagikan Galeri Event</h3>
+                    </div>
+                    <button
+                        @click="isShareModalOpen = false"
+                        class="p-1 rounded-lg text-slate-400 hover:text-slate-600 text-lg font-bold"
+                    >
+                        &times;
+                    </button>
+                </div>
+
+                <p class="text-xs text-slate-500">
+                    Gunakan tautan ini untuk membagikan seluruh foto booth & foto mentah ke klien, panitia, atau pengunjung event <strong>{{ event.name }}</strong>.
+                </p>
+
+                <!-- QR Code Box -->
+                <div class="bg-slate-50 p-4 rounded-2xl border border-slate-200 inline-block mx-auto shadow-inner">
+                    <img v-if="qrCodeDataUrl" :src="qrCodeDataUrl" alt="QR Code Galeri Event" class="w-48 h-48 mx-auto rounded-lg" />
+                    <div v-else class="w-48 h-48 flex items-center justify-center text-xs text-slate-400">Membuat QR Code...</div>
+                    <div class="text-[11px] text-slate-500 font-bold mt-2">Scan Langsung di Lokasi Event</div>
+                </div>
+
+                <!-- Copy Link Input -->
+                <div class="flex items-center gap-2">
+                    <input
+                        :value="publicGalleryUrl"
+                        readonly
+                        class="flex-1 py-2 px-3 text-xs rounded-xl border border-slate-300 bg-slate-50 font-mono text-slate-700 outline-none select-all font-bold"
+                    />
+                    <button
+                        @click="copyPublicGalleryUrl"
+                        type="button"
+                        class="px-4 py-2 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold transition flex items-center gap-1.5 shrink-0"
+                    >
+                        <Check v-if="isGalleryCopied" class="w-3.5 h-3.5" />
+                        <Copy v-else class="w-3.5 h-3.5" />
+                        <span>{{ isGalleryCopied ? 'Tersalin!' : 'Salin' }}</span>
+                    </button>
+                </div>
+
+                <!-- WhatsApp Share Button -->
+                <div>
+                    <a
+                        :href="whatsappShareUrl"
+                        target="_blank"
+                        rel="noopener"
+                        class="w-full py-2.5 px-4 rounded-xl bg-[#25D366] hover:bg-[#20bd5a] text-white text-xs font-extrabold transition flex items-center justify-center gap-2 shadow-sm"
+                    >
+                        <span>Bagikan ke WhatsApp</span>
+                        <ExternalLink class="w-3.5 h-3.5" />
+                    </a>
                 </div>
             </div>
         </div>

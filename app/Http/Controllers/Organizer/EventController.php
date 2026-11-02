@@ -8,6 +8,8 @@ use App\Models\EventDevice;
 use App\Models\EventSetting;
 use App\Models\FrameSlot;
 use App\Models\FrameTemplate;
+use App\Models\Photo;
+use App\Models\PhotoCapture;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Str;
@@ -127,14 +129,20 @@ class EventController extends Controller
             'devices',
             'frameTemplates.slots',
             'visitors' => fn ($q) => $q->latest()->take(50),
-            'sessions' => fn ($q) => $q->whereHas('photo')->with(['visitor', 'photo.accessTokens', 'frameTemplate', 'device'])->latest()->take(50),
+            'sessions' => fn ($q) => $q->where(fn ($sq) => $sq->has('photo')->orHas('captures'))
+                ->with(['visitor', 'photo.accessTokens', 'captures', 'frameTemplate', 'device'])
+                ->latest()
+                ->take(80),
         ]);
 
-        $photosCount = \App\Models\Photo::whereHas('session', fn ($q) => $q->where('event_id', $event->id))->count();
+        $photosCount = Photo::whereHas('session', fn ($q) => $q->where('event_id', $event->id))->count();
+        $rawCount = PhotoCapture::whereHas('session', fn ($q) => $q->where('event_id', $event->id))->count();
 
         return Inertia::render('Organizer/Events/Show', [
             'event' => $event,
             'photosCount' => $photosCount,
+            'rawCount' => $rawCount,
+            'publicGalleryUrl' => url("/e/{$event->slug}"),
             'boothUrl' => url("/booth/{$event->slug}"),
         ]);
     }

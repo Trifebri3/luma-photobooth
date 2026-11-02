@@ -4,6 +4,7 @@ use App\Http\Controllers\Admin\AdminAuthController;
 use App\Http\Controllers\Admin\DashboardController as AdminDashboard;
 use App\Http\Controllers\Auth\GoogleAuthController;
 use App\Http\Controllers\BoothController;
+use App\Http\Controllers\EventGalleryController;
 use App\Http\Controllers\GalleryController;
 use App\Http\Controllers\Organizer\DashboardController as OrganizerDashboard;
 use App\Http\Controllers\Organizer\EventController as OrganizerEventController;
@@ -57,14 +58,27 @@ Route::prefix('booth')->name('booth.')->group(function () {
     });
 });
 
-// 5. Public Private Anti-Bocor Photo Gallery
+// 5. Public Event Shared Gallery (Share Foto Booth & Foto Mentah per Event)
+Route::prefix('e/{slug}')->name('events.gallery.')->group(function () {
+    Route::get('/', [EventGalleryController::class, 'show'])->name('show');
+    Route::get('/photo/{photo}/image', [EventGalleryController::class, 'photoImage'])->name('photo.image');
+    Route::get('/photo/{photo}/download', [EventGalleryController::class, 'photoDownload'])->name('photo.download');
+    Route::get('/capture/{capture}/image', [EventGalleryController::class, 'captureImage'])->name('capture.image');
+    Route::get('/capture/{capture}/download', [EventGalleryController::class, 'captureDownload'])->name('capture.download');
+    Route::get('/zip', [EventGalleryController::class, 'downloadZip'])->name('zip');
+});
+Route::get('/events/{slug}/gallery', [EventGalleryController::class, 'show'])->name('events.gallery.full');
+
+// 6. Public Private Anti-Bocor Photo Gallery
 Route::prefix('p/{token}')->name('gallery.')->group(function () {
     Route::get('/', [GalleryController::class, 'show'])->name('show');
     Route::get('/image', [GalleryController::class, 'image'])->name('image');
     Route::get('/download', [GalleryController::class, 'download'])->name('download');
+    Route::get('/capture/{capture}/image', [GalleryController::class, 'captureImage'])->name('capture.image');
+    Route::get('/capture/{capture}/download', [GalleryController::class, 'captureDownload'])->name('capture.download');
 });
 
-// 6. Authenticated Organizer & Admin
+// 7. Authenticated Organizer & Admin
 Route::middleware(['auth'])->group(function () {
     Route::get('/dashboard', function (\Illuminate\Http\Request $request) {
         if ($request->user()->isSuperAdmin()) {
@@ -86,6 +100,8 @@ Route::middleware(['auth'])->group(function () {
         Route::get('photos/{photo}/image', [PhotoController::class, 'image'])->name('photos.image');
         Route::get('photos/{photo}/download', [PhotoController::class, 'download'])->name('photos.download');
         Route::delete('photos/{photo}', [PhotoController::class, 'destroy'])->name('photos.destroy');
+        Route::get('captures/{capture}/image', [PhotoController::class, 'captureImage'])->name('captures.image');
+        Route::get('captures/{capture}/download', [PhotoController::class, 'captureDownload'])->name('captures.download');
         
         // Frame Studio
         Route::get('events/{event}/studio', [FrameStudioController::class, 'index'])->name('events.studio');

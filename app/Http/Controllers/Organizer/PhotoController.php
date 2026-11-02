@@ -5,6 +5,8 @@ namespace App\Http\Controllers\Organizer;
 use App\Http\Controllers\Controller;
 use App\Models\Event;
 use App\Models\Photo;
+use App\Models\PhotoCapture;
+use App\Models\VisitorSession;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -107,7 +109,45 @@ class PhotoController extends Controller
     }
 
     /**
-     * Download all photos of a specific event as a ZIP archive.
+     * Securely stream raw capture image for authenticated organizer view.
+     */
+    public function captureImage(Request $request, PhotoCapture $capture): BinaryFileResponse
+    {
+        $this->authorizeCapture($request, $capture);
+
+        $path = Storage::disk('local')->path($capture->file_path);
+        if (! file_exists($path)) {
+            abort(404, 'File foto mentah tidak ditemukan pada server.');
+        }
+
+        return response()->file($path, [
+            'Cache-Control' => 'private, max-age=86400',
+        ]);
+    }
+
+    /**
+     * Download original raw capture photo.
+     */
+    public function captureDownload(Request $request, PhotoCapture $capture): BinaryFileResponse
+    {
+        $this->authorizeCapture($request, $capture);
+
+        $path = Storage::disk('local')->path($capture->file_path);
+        if (! file_exists($path)) {
+            abort(404, 'File foto mentah tidak ditemukan pada server.');
+        }
+
+        $eventSlug = Str::slug($capture->session?->event?->name ?? 'event');
+        $visitorName = Str::slug($capture->session?->visitor?->name ?? 'visitor');
+        $date = $capture->created_at->format('Ymd_His');
+        $ext = pathinfo($path, PATHINFO_EXTENSION) ?: 'jpg';
+        $fileName = "{$eventSlug}_{$visitorName}_Mentah_Pose{$capture->slot_number}_{$date}.{$ext}";
+
+        return response()->download($path, $fileName);
+    }
+
+    /**
+     * Download all photos of a specific event as a ZIP archive (both booth, raw, or combined).
      */
     public function downloadEventZip(Request $request, Event $event): BinaryFileResponse|RedirectResponse
     {
@@ -116,15 +156,23 @@ class PhotoController extends Controller
             abort(403, 'Akses tidak diizinkan untuk event ini.');
         }
 
-        $photos = Photo::whereHas('session', fn ($q) => $q->where('event_id', $event->id))
-            ->with('session.visitor')
+        $type = $request->query('type', 'all'); // 'all', 'booth', 'raw'
+
+        $sessions = VisitorSession::where('event_id', $event->id)
+            ->with(['visitor', 'photo', 'captures'])
             ->get();
 
-        if ($photos->isEmpty()) {
+        if ($sessions->isEmpty()) {
             return back()->with('error', 'Belum ada foto yang tersedia untuk diunduh pada event ini.');
         }
 
-        $zipFileName = 'Photos_' . Str::slug($event->name) . '_' . date('Ymd_His') . '.zip';
+        $dateTag = date('Ymd_His');
+        $typeLabel = match ($type) {
+            'booth' => 'Foto_Booth',
+            'raw' => 'Foto_Mentah',
+            default => 'Semua_Foto_Booth_Dan_Mentah',
+        };
+        $zipFileName = Str::slug($event->name) . "_{$typeLabel}_{$dateTag}.zip";
         $zipDir = storage_path('app/temp');
         if (! is_dir($zipDir)) {
             mkdir($zipDir, 0755, true);
@@ -137,20 +185,35 @@ class PhotoController extends Controller
         }
 
         $addedCount = 0;
-        foreach ($photos as $index => $photo) {
-            $filePath = Storage::disk('local')->path($photo->final_image_path);
-            if (file_exists($filePath)) {
-                $visitorName = Str::slug($photo->session?->visitor?->name ?: 'visitor');
-                $ext = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'jpg';
-                $entryName = sprintf(
-                    '%03d_%s_%s.%s',
-                    $index + 1,
-                    $visitorName,
-                    $photo->created_at->format('Ymd_His'),
-                    $ext
-                );
-                $zip->addFile($filePath, $entryName);
-                $addedCount++;
+        foreach ($sessions as $index => $session) {
+            $visitorName = Str::slug($session->visitor?->name ?: 'visitor');
+            $sessionNum = sprintf('%03d', $session->session_number ?: ($index + 1));
+            $dateStr = $session->created_at->format('Ymd_His');
+
+            // 1. Add booth composite photo
+            if (in_array($type, ['all', 'booth']) && $session->photo) {
+                $filePath = Storage::disk('local')->path($session->photo->final_image_path);
+                if (file_exists($filePath)) {
+                    $ext = pathinfo($filePath, PATHINFO_EXTENSION) ?: 'jpg';
+                    $folder = ($type === 'all') ? 'Foto_Booth/' : '';
+                    $entryName = "{$folder}{$sessionNum}_{$visitorName}_Booth_{$dateStr}.{$ext}";
+                    $zip->addFile($filePath, $entryName);
+                    $addedCount++;
+                }
+            }
+
+            // 2. Add raw captures (foto mentah)
+            if (in_array($type, ['all', 'raw'])) {
+                foreach ($session->captures as $capture) {
+                    $rawPath = Storage::disk('local')->path($capture->file_path);
+                    if (file_exists($rawPath)) {
+                        $ext = pathinfo($rawPath, PATHINFO_EXTENSION) ?: 'jpg';
+                        $folder = ($type === 'all') ? 'Foto_Mentah/' : '';
+                        $entryName = "{$folder}{$sessionNum}_{$visitorName}_Pose{$capture->slot_number}_{$dateStr}.{$ext}";
+                        $zip->addFile($rawPath, $entryName);
+                        $addedCount++;
+                    }
+                }
             }
         }
 
@@ -195,6 +258,22 @@ class PhotoController extends Controller
         $eventOwnerId = $photo->session?->event?->user_id;
         if ($eventOwnerId !== $user->id) {
             abort(403, 'Akses tidak diizinkan untuk foto ini.');
+        }
+    }
+
+    /**
+     * Authorize that the raw capture belongs to the authenticated user's event.
+     */
+    private function authorizeCapture(Request $request, PhotoCapture $capture): void
+    {
+        $user = $request->user();
+        if ($user->isSuperAdmin()) {
+            return;
+        }
+
+        $eventOwnerId = $capture->session?->event?->user_id;
+        if ($eventOwnerId !== $user->id) {
+            abort(403, 'Akses tidak diizinkan untuk foto mentah ini.');
         }
     }
 }
